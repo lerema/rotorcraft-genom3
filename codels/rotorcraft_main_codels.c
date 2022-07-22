@@ -703,10 +703,11 @@ mk_set_zero_velocity(rotorcraft_accum accum[3],
 
   /* gyro bias */
   if (accum[0].count) {
-    /* multiply by -1 to substract offset to the calibration */
-    accum[0].data[0] /= - accum[0].count;
-    accum[0].data[1] /= - accum[0].count;
-    accum[0].data[2] /= - accum[0].count;
+    /* negate the bias to substract offset to the calibration */
+    accum[0].data[0] /= accum[0].count; accum[0].data[0] = -accum[0].data[0];
+    accum[0].data[1] /= accum[0].count; accum[0].data[1] = -accum[0].data[1];
+    accum[0].data[2] /= accum[0].count; accum[0].data[2] = -accum[0].data[2];
+
     mk_calibration_bias(accum[0].data,
                         imu_calibration->gscale, imu_calibration->gbias);
     *imu_calibration_updated = true;
