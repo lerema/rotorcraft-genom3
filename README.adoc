@@ -435,6 +435,21 @@ a|.Inputs
 
 '''
 
+[[get_imu_temp]]
+=== get_imu_temp (attribute)
+
+[role="small", width="50%", float="right", cols="1"]
+|===
+a|.Outputs
+[disc]
+ * `double` `imu_temp` IMU temperature (°C)
+
+|===
+
+Get current IMU temperature.
+
+'''
+
 [[set_timeout]]
 === set_timeout (attribute)
 

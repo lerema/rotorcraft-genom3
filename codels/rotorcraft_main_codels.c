@@ -52,6 +52,8 @@ mk_main_init(rotorcraft_ids *ids, const rotorcraft_imu *imu,
     .malpha = { 1., 1., 1. }
   };
 
+  ids->imu_temp = nan(""); /* init with invalid temp */
+
   ids->conn = malloc(sizeof(*ids->conn));
   if (!ids->conn) return mk_e_sys_error(NULL, self);
   *ids->conn = (rotorcraft_conn_s){ .chan = NULL, .n = 0 };
@@ -159,6 +161,7 @@ genom_event
 mk_main_perm(const rotorcraft_conn_s *conn,
              const rotorcraft_ids_battery_s *battery,
              const rotorcraft_ids_imu_calibration_s *imu_calibration,
+             double imu_temp,
              const rotorcraft_ids_rotor_data_s *rotor_data,
              rotorcraft_ids_sensor_time_s *sensor_time,
              rotorcraft_ids_publish_time_s *publish_time,
@@ -312,7 +315,7 @@ mk_main_perm(const rotorcraft_conn_s *conn,
         (*log)->buffer, sizeof((*log)->buffer),
         "%s" rotorcraft_log_line "\n",
         (*log)->skipped ? "\n" : "",
-        (uint64_t)tv.tv_sec, (uint32_t)tv.tv_usec * 1000,
+        (uint64_t)tv.tv_sec, (uint32_t)tv.tv_usec * 1000, imu_temp,
         sensor_time->measured_rate.imu,
         sensor_time->measured_rate.mag,
         sensor_time->measured_rate.motor,

@@ -40,6 +40,7 @@ static const struct {
   const char *match;		/* match string */
   double rev;			/* minimum revision */
   double gres, ares, mres;	/* imu resolutions */
+  double tres, toff;		/* temperature resolution */
 } rc_devices[] = {
   [RC_MKBL] = {
     .match = "%*cmkbl%lf", .rev = 1.8,
@@ -60,7 +61,8 @@ static const struct {
     .match = "chimera%lf", .rev = 1.1,
     .gres = 1000. * M_PI/180 / 32768,
     .ares = 8 * 9.81 / 32768,
-    .mres = 1e-8
+    .mres = 1e-8,
+    .tres = 1/333.87, .toff = 21.
   },
 
   [RC_TEENSY] = {
@@ -75,7 +77,7 @@ static void	mk_comm_recv_msg(struct mk_channel_s *chan,
                         rotorcraft_ids_sensor_time_s *sensor_time,
                         const rotorcraft_imu *imu, const rotorcraft_mag *mag,
                         rotorcraft_ids_rotor_data_s *rotor_data,
-                        rotorcraft_ids_battery_s *battery,
+                        rotorcraft_ids_battery_s *battery, double *imu_temp,
                         const genom_context self);
 genom_event	mk_connect_chan(const char serial[64], uint32_t baud,
                         struct mk_channel_s *chan, const genom_context self);
@@ -175,7 +177,7 @@ mk_comm_recv(rotorcraft_conn_s **conn,
              rotorcraft_ids_sensor_time_s *sensor_time,
              const rotorcraft_imu *imu, const rotorcraft_mag *mag,
              rotorcraft_ids_rotor_data_s *rotor_data,
-             rotorcraft_ids_battery_s *battery,
+             rotorcraft_ids_battery_s *battery, double *imu_temp,
              const genom_context self)
 {
   int more;
@@ -186,7 +188,7 @@ mk_comm_recv(rotorcraft_conn_s **conn,
       more = 1;
       mk_comm_recv_msg(&(*conn)->chan[i],
                        imu_calibration, imu_filter, sensor_time,
-                       imu, mag, rotor_data, battery,
+                       imu, mag, rotor_data, battery, imu_temp,
                        self);
     }
 
@@ -200,7 +202,7 @@ mk_comm_recv_msg(struct mk_channel_s *chan,
                  rotorcraft_ids_sensor_time_s *sensor_time,
                  const rotorcraft_imu *imu, const rotorcraft_mag *mag,
                  rotorcraft_ids_rotor_data_s *rotor_data,
-                 rotorcraft_ids_battery_s *battery,
+                 rotorcraft_ids_battery_s *battery, double *imu_temp,
                  const genom_context self)
 {
   struct timeval tv;
@@ -217,7 +219,7 @@ mk_comm_recv_msg(struct mk_channel_s *chan,
   switch(*msg++) {
     case 'I': /* IMU data */
       if (!chan->imu) break;
-      if (len == 14) {
+      if (len == 14 || len == 16) {
         or_pose_estimator_state *idata = imu->data(self);
         double v[3];
         uint8_t seq = *msg++;
@@ -322,6 +324,15 @@ mk_comm_recv_msg(struct mk_channel_s *chan,
 
         idata->avel._present = true;
         idata->acc._present = true;
+
+        /* update temperature if present */
+        if (len == 16) {
+          v16 = ((int16_t)(*msg++) << 8);
+          v16 |= ((uint16_t)(*msg++) << 0);
+
+          *imu_temp = v16 * rc_devices[chan->device].tres +
+                      rc_devices[chan->device].toff;
+        }
       } else
         warnx("bad IMU message");
       break;
