@@ -363,6 +363,7 @@ a|.Outputs
  ** `double` `mscale[9]`
  ** `double` `mbias[3]`
  ** `double` `mstddev[3]`
+ ** `double` `temp` Average IMU temperature (°C)
 
 |===
 
@@ -387,6 +388,7 @@ a|.Inputs
  ** `double` `mscale[9]`
  ** `double` `mbias[3]`
  ** `double` `mstddev[3]`
+ ** `double` `temp` (default `"21"`) Average IMU temperature (°C)
 
 |===
 

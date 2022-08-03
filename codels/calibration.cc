@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2019,2021 LAAS/CNRS
+ * Copyright (c) 2015-2019,2021-2022 LAAS/CNRS
  * All rights reserved.
  *
  * Redistribution and use  in source  and binary  forms,  with or without
@@ -45,6 +45,7 @@ struct mk_calibration_data {
   int32_t sps, sstill, nposes;
 
   Eigen::Matrix<double, 1, Eigen::Dynamic> t;
+  Eigen::Matrix<double, 1, Eigen::Dynamic> temp;
   Eigen::Matrix<double, 3, Eigen::Dynamic> gyr;
   Eigen::Matrix<double, 3, Eigen::Dynamic> acc;
   Eigen::Matrix<double, 3, Eigen::Dynamic> mag;
@@ -75,6 +76,7 @@ mk_calibration_init(uint32_t sstill, uint32_t nposes, uint32_t sps,
   raw_data->sstill = sstill;
   raw_data->nposes = nposes;
 
+  raw_data->temp.resize(Eigen::NoChange, sps);
   raw_data->gyr.resize(Eigen::NoChange, sps);
   raw_data->acc.resize(Eigen::NoChange, sps);
   raw_data->mag.resize(Eigen::NoChange, sps);
@@ -96,7 +98,8 @@ mk_calibration_init(uint32_t sstill, uint32_t nposes, uint32_t sps,
 /* --- mk_calibration_collect ---------------------------------------------- */
 
 int
-mk_calibration_collect(or_pose_estimator_state *imu_data,
+mk_calibration_collect(double temp,
+                       or_pose_estimator_state *imu_data,
                        or_pose_estimator_state *mag_data, int32_t *still)
 {
   Eigen::Array<double, 6, 1> samp, var;
@@ -115,6 +118,10 @@ mk_calibration_collect(or_pose_estimator_state *imu_data,
     raw_data->t.conservativeResize(raw_data->t.cols() + raw_data->sps);
   raw_data->t(raw_data->samples) =
     imu_data->ts.sec + 1e-9 * imu_data->ts.nsec;
+
+  if (raw_data->temp.cols() <= raw_data->samples)
+    raw_data->temp.conservativeResize(raw_data->temp.cols() + raw_data->sps);
+  raw_data->temp(raw_data->samples) = temp;
 
   if (raw_data->gyr.cols() <= raw_data->samples)
     raw_data->gyr.conservativeResize(Eigen::NoChange,
@@ -536,7 +543,8 @@ mk_calibration_mag(double mscale[9], double mbias[3])
 
 void
 mk_calibration_fini(double stddeva[3], double stddevw[3], double stddevm[3],
-                    double maxa[3], double maxw[3], double *avga, double *avgw)
+                    double maxa[3], double maxw[3],
+                    double *avgtemp, double *avga, double *avgw)
 {
   Eigen::Array<double, 3, 1> sum, sumsq, s, v;
   int32_t i, k, n, l;
@@ -624,6 +632,10 @@ mk_calibration_fini(double stddeva[3], double stddevw[3], double stddevm[3],
     m = raw_data->gyr.cwiseAbs().rowwise().maxCoeff();
   }
 
+  /* average temp */
+  if (avgtemp)
+    *avgtemp = raw_data->temp.leftCols(raw_data->samples).mean();
+
   if (raw_data) delete raw_data;
 }
 
@@ -638,7 +650,7 @@ mk_calibration_log(const char *path)
   int still;
 
   if (!f) { warn("%s", path); return; }
-  fprintf(f, "still  "
+  fprintf(f, "still imu_temp  "
           "imu_ax imu_ay imu_az  imu_wx imu_wy imu_wz  mag_x mag_y mag_z  "
           "moq_ax moq_ay moq_az  moq_wx moq_wy moq_wz\n");
 
@@ -656,8 +668,8 @@ mk_calibration_log(const char *path)
       }
     }
 
-    fprintf(f, "%d  %g %g %g  %g %g %g  %g %g %g  %g %g %g  %g %g %g\n",
-            still,
+    fprintf(f, "%d %g  %g %g %g  %g %g %g  %g %g %g  %g %g %g  %g %g %g\n",
+            still, raw_data->temp(i),
             raw_data->acc(0, i), raw_data->acc(1, i), raw_data->acc(2, i),
             raw_data->gyr(0, i), raw_data->gyr(1, i), raw_data->gyr(2, i),
             raw_data->mag(0, i), raw_data->mag(1, i), raw_data->mag(2, i),

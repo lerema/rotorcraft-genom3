@@ -94,6 +94,7 @@ component rotorcraft {
       double gscale[9], gbias[3], gstddev[3];
       double ascale[9], abias[3], astddev[3];
       double mscale[9], mbias[3], mstddev[3];
+      double temp;
     } imu_calibration;
     boolean imu_calibration_updated;
 
@@ -199,7 +200,8 @@ component rotorcraft {
       .gstddev =: "Gyroscopes measurement noise",
       .ascale =: "Accelerometers 3×3 scaling matrix (row major)",
       .abias =: "Accelerometers bias vector",
-      .astddev =: "Accelerometers measurement noise"
+      .astddev =: "Accelerometers measurement noise",
+      .temp =: "Average IMU temperature (°C)"
     }) {
     doc "Get current gyroscopes and accelerometer calibration data.";
   };
@@ -209,7 +211,8 @@ component rotorcraft {
       .gstddev =: "Gyroscopes measurement noise",
       .ascale =: "Accelerometers 3×3 scaling matrix (row major)",
       .abias =: "Accelerometers bias vector",
-      .astddev =: "Accelerometers measurement noise"
+      .astddev =: "Accelerometers measurement noise",
+      .temp = 21.: "Average IMU temperature (°C)"
     }) {
     doc "Set current gyroscopes and accelerometer calibration data.";
     doc "";
@@ -458,7 +461,8 @@ component rotorcraft {
 
     codel<start> mk_calibrate_imu_start(in calib_param, in tstill, in nposes)
       yield collect;
-    codel<collect> mk_calibrate_imu_collect(in path, in imu, in mag)
+    codel<collect> mk_calibrate_imu_collect(in path,
+                                            in imu_temp, in imu, in mag)
       yield pause::collect, main;
     codel<main> mk_calibrate_imu_main(in path, in sensor_time.rate,
                                       out imu_calibration,
@@ -488,7 +492,8 @@ component rotorcraft {
 
     codel<start> mk_calibrate_mag_start(in calib_param, in tstill)
       yield collect;
-    codel<collect> mk_calibrate_imu_collect(in path, in imu, in mag)
+    codel<collect> mk_calibrate_imu_collect(in path,
+                                            in imu_temp, in imu, in mag)
       yield pause::collect, main;
     codel<main> mk_calibrate_mag_main(in path, out imu_calibration,
                                       out imu_calibration_updated)

@@ -401,7 +401,7 @@ mk_calibrate_imu_start(const rotorcraft_ids_calibration_param_s *calib_param,
  * Throws rotorcraft_e_sys, rotorcraft_e_connection.
  */
 genom_event
-mk_calibrate_imu_collect(const char path[64],
+mk_calibrate_imu_collect(const char path[64], double imu_temp,
                          const rotorcraft_imu *imu,
                          const rotorcraft_mag *mag,
                          const genom_context self)
@@ -409,7 +409,8 @@ mk_calibrate_imu_collect(const char path[64],
   int32_t still;
   int s;
 
-  s = mk_calibration_collect(imu->data(self), mag->data(self), &still);
+  s = mk_calibration_collect(
+    imu_temp, imu->data(self), mag->data(self), &still);
   switch(s) {
     case 0: break;
 
@@ -423,7 +424,7 @@ mk_calibrate_imu_collect(const char path[64],
     default:
       warnx("calibration aborted");
       if (*path) mk_calibration_log(path);
-      mk_calibration_fini(NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+      mk_calibration_fini(NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
       errno = s;
       return mk_e_sys_error("calibration", self);
   }
@@ -474,7 +475,7 @@ mk_calibrate_imu_main(const char path[64],
     imu_calibration->astddev,
     imu_calibration->gstddev,
     rate->mag > 0. ? imu_calibration->mstddev : NULL,
-    maxa, maxw, &avga, &avgw);
+    maxa, maxw, &imu_calibration->temp, &avga, &avgw);
   warnx("calibration max acceleration: "
         "x %.2fm/s², y %.2fm/s², z %.2fm/s²", maxa[0], maxa[1], maxa[2]);
   warnx("calibration avg acceleration: %gm/s²", avga);
@@ -488,7 +489,7 @@ mk_calibrate_imu_main(const char path[64],
 
 fail:
   if (*path) mk_calibration_log(path);
-  mk_calibration_fini(NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+  mk_calibration_fini(NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
   errno = s;
   return mk_e_sys_error("calibration", self);
 }
@@ -541,13 +542,13 @@ mk_calibrate_mag_main(const char path[64],
   if (*path) mk_calibration_log(path);
 
   mk_calibration_fini(
-    NULL, NULL, imu_calibration->mstddev, NULL, NULL, NULL, NULL);
+    NULL, NULL, imu_calibration->mstddev, NULL, NULL, NULL, NULL, NULL);
 
   *imu_calibration_updated = true;
   return rotorcraft_ether;
 
 fail:
-  mk_calibration_fini(NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+  mk_calibration_fini(NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
   errno = s;
   return mk_e_sys_error("calibration", self);
 }
