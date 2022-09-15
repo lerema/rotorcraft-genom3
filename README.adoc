@@ -277,6 +277,7 @@ a|.Outputs
  ** `double` `min` Minimum acceptable battery voltage
  ** `double` `max` Full battery voltage
  ** `double` `level` Current battery voltage
+ ** `octet` `status`
 
 |===
 

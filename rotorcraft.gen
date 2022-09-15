@@ -83,6 +83,7 @@ component rotorcraft {
     struct battery_s {
       double min, max;
       double level;
+      octet status; // Get the status of the battery
     } battery;
 
     /* imu calibration & filtering */
@@ -279,7 +280,7 @@ component rotorcraft {
       yield poll;
     codel<recv> mk_comm_recv(inout conn, in imu_calibration, in imu_filter,
                              inout sensor_time,
-                             out imu, out mag, out rotor_data, out battery,
+                             out imu, out mag, out rotor_data, inout battery,
                              out imu_temp)
       yield poll, recv;
 
