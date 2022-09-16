@@ -457,7 +457,7 @@ mk_comm_recv_msg(struct mk_channel_s *chan,
           battery->level = battery->max;
           battery->status = 0; //FULL
         }
-        else if (battery->level >= battery->min && battery->level <= battery->max)
+        else if (battery->level > battery->min && battery->level <= battery->max)
         {
           printf("DISCHARGING\n");
           battery->status = 1; //DISCHARGING;
@@ -465,7 +465,7 @@ mk_comm_recv_msg(struct mk_channel_s *chan,
           //SIMULATED BATTERY LEVEL CHANGE
           battery->level -= 0.00005; // TODO: add simulation of battery consumption
         }
-        else if (battery->min > battery->level)
+        else if (battery->min >= battery->level)
         {
           printf("LOW\n");
           battery->level = battery->min;
