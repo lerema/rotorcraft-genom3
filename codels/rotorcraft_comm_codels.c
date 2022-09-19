@@ -451,23 +451,19 @@ mk_comm_recv_msg(struct mk_channel_s *chan,
         // u16 = ((uint16_t)(*msg++) << 8);
         // u16 |= ((uint16_t)(*msg++) << 0);
 
-        printf("battery level %f\n", battery->level);
         if (battery->level == 0.){
-          printf("FULL\n");
           battery->level = battery->max;
           battery->status = 0; //FULL
         }
         else if (battery->level > battery->min && battery->level <= battery->max)
         {
-          printf("DISCHARGING\n");
           battery->status = 1; //DISCHARGING;
 
           //SIMULATED BATTERY LEVEL CHANGE
-          battery->level -= 0.00005; // TODO: add simulation of battery consumption
+          battery->level -= 0.005; // TODO: add simulation of battery consumption
         }
         else if (battery->min >= battery->level)
         {
-          printf("LOW\n");
           battery->level = battery->min;
           battery->status = 255; //CRITICAL
         }
