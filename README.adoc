@@ -1108,6 +1108,33 @@ Compute gyroscopes, accelerometers and magnetomers average.
 
 '''
 
+[[monitor_battery]]
+=== monitor_battery (activity)
+
+[role="small", width="50%", float="right", cols="1"]
+|===
+a|.Inputs
+[disc]
+ * `double` `threshold_percentage` (default `"0"`) Monitored absolute position in m
+
+a|.Outputs
+[disc]
+ * `double` `current_battery_level` Current battery level in percentage
+
+a|.Throws
+[disc]
+ * `exception ::rotorcraft::e_bad_battery_percentage`
+
+a|.Context
+[disc]
+  * In task `<<main>>`
+  (frequency 1000.0 _Hz_)
+|===
+
+Monitor the passage on the given position
+
+'''
+
 == Tasks
 
 [[main]]

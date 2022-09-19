@@ -171,6 +171,24 @@ mk_validate_input(const or_rotorcraft_rotor_state state[8],
 
 
 
+/* --- Activity monitor_battery ----------------------------------------- */
+
+/** Validation codel controlPercentage of activity monitor_battery.
+ *
+ * Returns genom_ok.
+ * Throws rotorcraft_e_bad_battery_percentage.
+ */
+genom_event
+controlPercentage(double threshold_percentage,
+                  const genom_context self)
+{
+  if (threshold_percentage < 0. || threshold_percentage > 100.)
+    return rotorcraft_e_bad_battery_percentage(self);
+
+  return genom_ok;
+}
+
+
 /* --- Function get_imu_filter ------------------------------------------ */
 
 /** Codel rc_get_imu_filter of function get_imu_filter.

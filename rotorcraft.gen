@@ -37,6 +37,7 @@ component rotorcraft {
   exception e_rotor_not_disabled { unsigned short id; };
   exception e_started, e_connection, e_range, e_input;
   exception e_rate { string<8> what; };
+  exception e_bad_battery_percentage;
 
   native conn_s;
   native log_s;
@@ -82,7 +83,7 @@ component rotorcraft {
     /* battery data */
     struct battery_s {
       double min, max;
-      double level;
+      double level; //volts
       octet status; // Get the status of the battery
     } battery;
 
@@ -693,4 +694,17 @@ component rotorcraft {
 
       throw e_sys;
   };
-};
+
+  activity monitor_battery (in double threshold_percentage = 0 :"Monitored absolute position in m",
+                    out double current_battery_level = :"Current battery level in percentage") {
+
+    doc		"Monitor the passage on the given position";
+    validate	controlPercentage (in threshold_percentage);
+
+    codel <start> monitor_start(in threshold_percentage, in rotor_data.state) yield pause::start, stop;
+    codel <stop> monitorStop(in rotor_data.state, out current_battery_level) yield ether;
+
+    task		main;
+    throw		e_bad_battery_percentage;
+  };
+  };

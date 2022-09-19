@@ -1118,3 +1118,38 @@ mk_get_sensor_average(rotorcraft_accum accum[3], or_t3d_avel *gyr,
 
   return rotorcraft_ether;
 }
+
+
+/* --- Activity monitor_battery ----------------------------------------- */
+
+/** Codel monitor_start of activity monitor_battery.
+ *
+ * Triggered by rotorcraft_start.
+ * Yields to rotorcraft_pause_start, rotorcraft_stop.
+ * Throws rotorcraft_e_bad_battery_percentage.
+ */
+genom_event
+monitor_start(double threshold_percentage,
+              const or_rotorcraft_rotor_state state[8],
+              const genom_context self)
+{
+  if  (state[0].energy_level < threshold_percentage) {
+    return rotorcraft_stop;
+  } else {
+    return rotorcraft_pause_start;
+  }
+}
+
+/** Codel monitorStop of activity monitor_battery.
+ *
+ * Triggered by rotorcraft_stop.
+ * Yields to rotorcraft_ether.
+ * Throws rotorcraft_e_bad_battery_percentage.
+ */
+genom_event
+monitorStop(const or_rotorcraft_rotor_state state[8],
+            double *current_battery_level, const genom_context self)
+{
+  *current_battery_level = state[0].energy_level;
+  return rotorcraft_ether;
+}
