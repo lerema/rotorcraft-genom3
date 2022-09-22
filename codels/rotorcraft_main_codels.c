@@ -1043,13 +1043,22 @@ mk_stop(const rotorcraft_conn_s *conn,
         const genom_context self)
 {
   (void)self;
+  struct timeval tv;
   uint32_t i;
 
+  /* stop rotors */
   for(i = 0; i < conn->n; i++)
-    mk_send_msg(&conn->chan[i], "x");
+    if (mk_send_msg(&conn->chan[i], "x"))
+      warnx("cannot send to %s", conn->chan[i].path);
 
+  gettimeofday(&tv, NULL);
   for(i = 0; i < or_rotorcraft_max_rotors; i++) {
     if (state[i].disabled) continue;
+
+    /* watchdog on motor data */
+    if (tv.tv_sec + 1e-6*tv.tv_usec >
+        0.5 + state[i].ts.sec + 1e-9*state[i].ts.nsec) continue;
+
     if (state[i].spinning) return rotorcraft_pause_start;
   }
 
