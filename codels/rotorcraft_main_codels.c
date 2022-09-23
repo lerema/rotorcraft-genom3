@@ -794,9 +794,7 @@ mk_start_monitor(const rotorcraft_conn_s *conn,
   for(i = 0; i < or_rotorcraft_max_rotors; i++) {
     if (rotor_state[i].disabled) {
       if (rotor_state[i].starting || rotor_state[i].spinning) {
-        for(m = 0; m < conn->n; m++)
-          mk_send_msg(&conn->chan[m], "x");
-
+        mk_stop(conn, rotor_state, self);
         d.id = 1 + i;
         return rotorcraft_e_rotor_not_disabled(&d, self);
       }
@@ -809,9 +807,7 @@ mk_start_monitor(const rotorcraft_conn_s *conn,
 
     if ((!rotor_state[i].starting && (*state & (1 << i))) ||
         rotor_state[i].emerg) {
-      for(m = 0; m < conn->n; m++)
-        mk_send_msg(&conn->chan[m], "x");
-
+      mk_stop(conn, rotor_state, self);
       e.id = 1 + i;
       return rotorcraft_e_rotor_failure(&e, self);
     }
@@ -831,8 +827,7 @@ mk_start_monitor(const rotorcraft_conn_s *conn,
 
   if (!complete) {
     if (!*timeout) {
-      for(m = 0; m < conn->n; m++)
-        mk_send_msg(&conn->chan[m], "x");
+      mk_stop(conn, rotor_state, self);
       errno = EAGAIN;
       return mk_e_sys_error("start", self);
     }
@@ -846,8 +841,7 @@ mk_start_monitor(const rotorcraft_conn_s *conn,
 
   if (rate_less80p(imu) || rate_less80p(mag) || rate_less80p(motor)) {
     if (!*timeout) {
-      for(m = 0; m < conn->n; m++)
-        mk_send_msg(&conn->chan[m], "x");
+      mk_stop(conn, rotor_state, self);
       return rotorcraft_e_rate(&erate, self);
     }
     return rotorcraft_pause_monitor;
