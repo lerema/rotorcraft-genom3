@@ -476,21 +476,27 @@ mk_set_throttle(const rotorcraft_conn_s *conn,
 genom_event
 mk_log_start(const char path[64], uint32_t decimation,
              const rotorcraft_ids_imu_calibration_s *imu_calibration,
+             const rotorcraft_ids_imu_filter_s *imu_filter,
+             const rotorcraft_ids_sensor_time_s_rate_s *rate,
              rotorcraft_log_s **log, const genom_context self)
 {
+  double gfc[3], afc[3], mfc[3];
   time_t t;
   int fd;
   int s;
 
   t = time(NULL);
+  rc_get_imu_filter(imu_filter, rate, gfc, afc, mfc, self);
 
   fd = open(path, O_WRONLY|O_APPEND|O_CREAT|O_TRUNC, 0666);
   if (fd < 0) return mk_e_sys_error(path, self);
 
+  /* log header with some config info */
   s = dprintf(
     fd,
-    "# %s" /* ctime(3) has a \n */
-    "# IMU calibration\n"
+    "# logged on %s" /* ctime(3) has a \n */
+    "#\n"
+    "# IMU calibration (%g°C average)\n"
 #define mk_log_cal(x)                           \
     "# " #x "scale {\n"                         \
     "#  0 %20g  1 %20g  2 %20g\n"               \
@@ -506,10 +512,17 @@ mk_log_start(const char path[64], uint32_t decimation,
 
     mk_log_cal(g) mk_log_cal(a) mk_log_cal(m)
 #undef mk_log_cal
-    "\n"
+    "#\n"
+    "# IMU low-pass filter cutoff frequencies\n"
+#define mk_log_fc(x)                           \
+    "# " #x "fc { x %g  y %g  z %g }\n"
+
+    mk_log_fc(g) mk_log_fc(a) mk_log_fc(m)
+#undef mk_log_fc
+    "#\n"
     rotorcraft_log_header "\n",
 
-    ctime(&t),
+    ctime(&t), imu_calibration->temp,
 #define mk_calm(x, y) imu_calibration->x ## y
 #define mk_log_cal(x)                                                   \
     mk_calm(x, scale)[0], mk_calm(x, scale)[1], mk_calm(x, scale)[2],   \
@@ -518,9 +531,14 @@ mk_log_start(const char path[64], uint32_t decimation,
     mk_calm(x, bias)[0], mk_calm(x, bias)[1], mk_calm(x, bias)[2],      \
     mk_calm(x, stddev)[0], mk_calm(x, stddev)[1], mk_calm(x, stddev)[2]
 
-    mk_log_cal(g), mk_log_cal(a), mk_log_cal(m)
+    mk_log_cal(g), mk_log_cal(a), mk_log_cal(m),
 #undef mk_log_cal
 #undef mk_calm
+#define mk_log_fc(x)                           \
+    x ## fc[0], x ## fc[1], x ## fc[2]
+
+    mk_log_fc(g), mk_log_fc(a), mk_log_fc(m)
+#undef mk_log_fc
     );
   if (s < 0) return mk_e_sys_error(path, self);
 

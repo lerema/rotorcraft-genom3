@@ -659,7 +659,8 @@ component rotorcraft {
                in unsigned long decimation = 1: "Reduced logging frequency") {
     doc		"Log IMU and commanded wrench";
 
-    codel mk_log_start(in path, in decimation, in imu_calibration, inout log);
+    codel mk_log_start(in path, in decimation, in imu_calibration,
+                       in imu_filter, in sensor_time.rate, inout log);
 
     throw e_sys;
   };
