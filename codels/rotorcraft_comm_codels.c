@@ -73,7 +73,7 @@ static const struct {
 
 static void	mk_comm_recv_msg(struct mk_channel_s *chan,
                         const rotorcraft_ids_imu_calibration_s *imu_calibration,
-                        const rotorcraft_ids_imu_filter_s *imu_filter,
+                        rotorcraft_ids_imu_filter_s *imu_filter,
                         rotorcraft_ids_sensor_time_s *sensor_time,
                         const rotorcraft_imu *imu, const rotorcraft_mag *mag,
                         rotorcraft_ids_rotor_data_s *rotor_data,
@@ -81,6 +81,10 @@ static void	mk_comm_recv_msg(struct mk_channel_s *chan,
                         const genom_context self);
 genom_event	mk_connect_chan(const char serial[64], uint32_t baud,
                         struct mk_channel_s *chan, const genom_context self);
+
+static void	rc_filter_imu_data(const double raw[3],
+                        const double scale[3*3], const double bias[3],
+                        double in[3], const double alpha[3], double out[3]);
 static void	mk_get_ts(uint8_t seq, struct timeval atv, double rate,
                         rotorcraft_ids_sensor_time_s_ts_s *timings,
                         or_time_ts *ts, double *lprate);
@@ -133,6 +137,7 @@ mk_comm_poll(const rotorcraft_conn_s *conn, const genom_context self)
  */
 genom_event
 mk_comm_nodata(rotorcraft_conn_s **conn,
+               rotorcraft_ids_imu_filter_s *imu_filter,
                rotorcraft_ids_sensor_time_s *sensor_time,
                const rotorcraft_imu *imu, const rotorcraft_mag *mag,
                rotorcraft_ids_battery_s *battery,
@@ -142,6 +147,13 @@ mk_comm_nodata(rotorcraft_conn_s **conn,
   or_pose_estimator_state *mdata = mag->data(self);
 
   /* reset exported data in case of timeout */
+  imu_filter->g[0] = imu_filter->g[1] = imu_filter->g[2] =
+  imu_filter->a[0] = imu_filter->a[1] = imu_filter->a[2] =
+  imu_filter->m[0] = imu_filter->m[1] = imu_filter->m[2] =
+  imu_filter->gf[0] = imu_filter->gf[1] = imu_filter->gf[2] =
+  imu_filter->af[0] = imu_filter->af[1] = imu_filter->af[2] =
+  imu_filter->mf[0] = imu_filter->mf[1] = imu_filter->mf[2] = nan("");
+
   idata->avel._present = false;
   idata->avel._value.wx = idata->avel._value.wy = idata->avel._value.wz =
     nan("");
@@ -173,7 +185,7 @@ mk_comm_nodata(rotorcraft_conn_s **conn,
 genom_event
 mk_comm_recv(rotorcraft_conn_s **conn,
              const rotorcraft_ids_imu_calibration_s *imu_calibration,
-             const rotorcraft_ids_imu_filter_s *imu_filter,
+             rotorcraft_ids_imu_filter_s *imu_filter,
              rotorcraft_ids_sensor_time_s *sensor_time,
              const rotorcraft_imu *imu, const rotorcraft_mag *mag,
              rotorcraft_ids_rotor_data_s *rotor_data,
@@ -198,7 +210,7 @@ mk_comm_recv(rotorcraft_conn_s **conn,
 static void
 mk_comm_recv_msg(struct mk_channel_s *chan,
                  const rotorcraft_ids_imu_calibration_s *imu_calibration,
-                 const rotorcraft_ids_imu_filter_s *imu_filter,
+                 rotorcraft_ids_imu_filter_s *imu_filter,
                  rotorcraft_ids_sensor_time_s *sensor_time,
                  const rotorcraft_imu *imu, const rotorcraft_mag *mag,
                  rotorcraft_ids_rotor_data_s *rotor_data,
@@ -210,7 +222,6 @@ mk_comm_recv_msg(struct mk_channel_s *chan,
   uint8_t *msg, len;
   int16_t v16;
   uint16_t u16;
-  double vc;
 
   gettimeofday(&tv, NULL);
 
@@ -233,97 +244,46 @@ mk_comm_recv_msg(struct mk_channel_s *chan,
 
         v16 = ((int16_t)(*msg++) << 8);
         v16 |= ((uint16_t)(*msg++) << 0);
-        v[0] = v16 * rc_devices[chan->device].ares
-               + imu_calibration->abias[0];
+        v[0] = v16 * rc_devices[chan->device].ares;
 
         v16 = ((int16_t)(*msg++) << 8);
         v16 |= ((uint16_t)(*msg++) << 0);
-        v[1] = v16 * rc_devices[chan->device].ares
-               + imu_calibration->abias[1];
+        v[1] = v16 * rc_devices[chan->device].ares;
 
         v16 = ((int16_t)(*msg++) << 8);
         v16 |= ((uint16_t)(*msg++) << 0);
-        v[2] = v16 * rc_devices[chan->device].ares
-               + imu_calibration->abias[2];
+        v[2] = v16 * rc_devices[chan->device].ares;
 
-        vc =
-          imu_calibration->ascale[0] * v[0] +
-          imu_calibration->ascale[1] * v[1] +
-          imu_calibration->ascale[2] * v[2];
-        if (!isnan(idata->acc._value.ax))
-          idata->acc._value.ax +=
-            imu_filter->aalpha[0] * (vc - idata->acc._value.ax);
-        else
-          idata->acc._value.ax = vc;
+        rc_filter_imu_data(
+          v, imu_calibration->ascale, imu_calibration->abias,
+          imu_filter->a, imu_filter->aalpha, imu_filter->af);
 
-        vc =
-          imu_calibration->ascale[3] * v[0] +
-          imu_calibration->ascale[4] * v[1] +
-          imu_calibration->ascale[5] * v[2];
-        if (!isnan(idata->acc._value.ay))
-          idata->acc._value.ay +=
-            imu_filter->aalpha[1] * (vc - idata->acc._value.ay);
-        else
-          idata->acc._value.ay = vc;
-
-        vc =
-          imu_calibration->ascale[6] * v[0] +
-          imu_calibration->ascale[7] * v[1] +
-          imu_calibration->ascale[8] * v[2];
-        if (!isnan(idata->acc._value.az))
-          idata->acc._value.az +=
-            imu_filter->aalpha[2] * (vc - idata->acc._value.az);
-        else
-          idata->acc._value.az = vc;
+        idata->acc._value.ax = imu_filter->af[0];
+        idata->acc._value.ay = imu_filter->af[1];
+        idata->acc._value.az = imu_filter->af[2];
+        idata->acc._present = true;
 
         /* gyroscope */
         v16 = ((int16_t)(*msg++) << 8);
         v16 |= ((uint16_t)(*msg++) << 0);
-        v[0] = v16 * rc_devices[chan->device].gres
-               + imu_calibration->gbias[0];
+        v[0] = v16 * rc_devices[chan->device].gres;
 
         v16 = ((int16_t)(*msg++) << 8);
         v16 |= ((uint16_t)(*msg++) << 0);
-        v[1] = v16 * rc_devices[chan->device].gres
-               + imu_calibration->gbias[1];
+        v[1] = v16 * rc_devices[chan->device].gres;
 
         v16 = ((int16_t)(*msg++) << 8);
         v16 |= ((uint16_t)(*msg++) << 0);
-        v[2] = v16 * rc_devices[chan->device].gres
-               + imu_calibration->gbias[2];
+        v[2] = v16 * rc_devices[chan->device].gres;
 
-        vc =
-          imu_calibration->gscale[0] * v[0] +
-          imu_calibration->gscale[1] * v[1] +
-          imu_calibration->gscale[2] * v[2];
-        if (!isnan(idata->avel._value.wx))
-          idata->avel._value.wx +=
-            imu_filter->galpha[0] * (vc - idata->avel._value.wx);
-        else
-          idata->avel._value.wx = vc;
+        rc_filter_imu_data(
+          v, imu_calibration->gscale, imu_calibration->gbias,
+          imu_filter->g, imu_filter->galpha, imu_filter->gf);
 
-        vc =
-          imu_calibration->gscale[3] * v[0] +
-          imu_calibration->gscale[4] * v[1] +
-          imu_calibration->gscale[5] * v[2];
-        if (!isnan(idata->avel._value.wy))
-          idata->avel._value.wy +=
-            imu_filter->galpha[1] * (vc - idata->avel._value.wy);
-        else
-          idata->avel._value.wy = vc;
-
-        vc =
-          imu_calibration->gscale[6] * v[0] +
-          imu_calibration->gscale[7] * v[1] +
-          imu_calibration->gscale[8] * v[2];
-        if (!isnan(idata->avel._value.wz))
-          idata->avel._value.wz +=
-            imu_filter->galpha[2] * (vc - idata->avel._value.wz);
-        else
-          idata->avel._value.wz = vc;
-
+        idata->avel._value.wx = imu_filter->gf[0];
+        idata->avel._value.wy = imu_filter->gf[1];
+        idata->avel._value.wz = imu_filter->gf[2];
         idata->avel._present = true;
-        idata->acc._present = true;
 
         /* update temperature if present */
         if (len == 16) {
@@ -365,38 +325,14 @@ mk_comm_recv_msg(struct mk_channel_s *chan,
         v[2] = v16 * rc_devices[chan->device].mres
                + imu_calibration->mbias[2];
 
+        rc_filter_imu_data(
+          v, imu_calibration->mscale, imu_calibration->mbias,
+          imu_filter->m, imu_filter->malpha, imu_filter->mf);
+
         mdata->att._value.qw = nan("");
-
-        vc =
-          imu_calibration->mscale[0] * v[0] +
-          imu_calibration->mscale[1] * v[1] +
-          imu_calibration->mscale[2] * v[2];
-        if (!isnan(mdata->att._value.qx))
-          mdata->att._value.qx +=
-            imu_filter->malpha[0] * (vc - mdata->att._value.qx);
-        else
-          mdata->att._value.qx = vc;
-
-        vc =
-          imu_calibration->mscale[3] * v[0] +
-          imu_calibration->mscale[4] * v[1] +
-          imu_calibration->mscale[5] * v[2];
-        if (!isnan(mdata->att._value.qy))
-          mdata->att._value.qy +=
-            imu_filter->malpha[1] * (vc - mdata->att._value.qy);
-        else
-          mdata->att._value.qy = vc;
-
-        vc =
-          imu_calibration->mscale[6] * v[0] +
-          imu_calibration->mscale[7] * v[1] +
-          imu_calibration->mscale[8] * v[2];
-        if (!isnan(mdata->att._value.qz))
-          mdata->att._value.qz +=
-            imu_filter->malpha[2] * (vc - mdata->att._value.qz);
-        else
-          mdata->att._value.qz = vc;
-
+        mdata->att._value.qx = imu_filter->mf[0];
+        mdata->att._value.qy = imu_filter->mf[1];
+        mdata->att._value.qz = imu_filter->mf[2];
         mdata->att._present = true;
       } else
         warnx("bad magnetometer message");
@@ -809,6 +745,35 @@ mk_connect_chan(const char serial[64], uint32_t baud, struct mk_channel_s *chan,
   warnx("connected to %s, %s", &chan->msg[1], chan->path);
 
   return genom_ok;
+}
+
+
+/* --- rc_filter_imu_data -------------------------------------------------- */
+
+/* Appy calibration and filter to gyro, accelerometer or magnetometer data */
+
+static void
+rc_filter_imu_data(const double raw[3],
+                   const double scale[3*3], const double bias[3],
+                   double in[3], const double alpha[3], double out[3])
+{
+  double v[3];
+  int i;
+
+  for(i = 0; i < 3; i++)
+    v[i] = raw[i] + bias[i];
+
+  for(i = 0; i < 3; i++) {
+    in[i] =
+      scale[3*i + 0] * v[0] +
+      scale[3*i + 1] * v[1] +
+      scale[3*i + 2] * v[2];
+
+    if (!isnan(out[i]))
+      out[i] += alpha[i] * (in[i] - out[i]);
+    else
+      out[i] = in[i];
+  }
 }
 
 

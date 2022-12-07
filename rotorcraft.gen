@@ -99,7 +99,10 @@ component rotorcraft {
     boolean imu_calibration_updated;
 
     struct imu_filter_s {
-      double galpha[3], aalpha[3], malpha[3];
+      double galpha[3], aalpha[3], malpha[3];	/* filter coefficients */
+
+      double g[3], a[3], m[3];			/* raw data */
+      double gf[3], af[3], mf[3];		/* filtered data */
     } imu_filter;
 
     double imu_temp;
@@ -273,7 +276,7 @@ component rotorcraft {
       yield log;
     codel<log> rc_main_log(in battery, in imu_temp, in rotor_data,
                            in sensor_time.measured_rate, in rotor_measure,
-                           in imu, in mag, inout log)
+                           in imu_filter, inout log)
       yield pause::main;
 
     codel<stop> mk_main_stop(inout log)
@@ -286,10 +289,11 @@ component rotorcraft {
 
     async codel<poll> mk_comm_poll(in conn)
       yield nodata, recv;
-    codel<nodata> mk_comm_nodata(inout conn, inout sensor_time,
+    codel<nodata> mk_comm_nodata(inout conn,
+                                 inout imu_filter, inout sensor_time,
                                  out imu, out mag, out battery)
       yield poll;
-    codel<recv> mk_comm_recv(inout conn, in imu_calibration, in imu_filter,
+    codel<recv> mk_comm_recv(inout conn, in imu_calibration, inout imu_filter,
                              inout sensor_time,
                              out imu, out mag, out rotor_data, out battery,
                              out imu_temp)

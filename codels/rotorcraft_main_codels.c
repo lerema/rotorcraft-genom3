@@ -50,7 +50,15 @@ mk_main_init(rotorcraft_ids *ids, const rotorcraft_imu *imu,
   ids->imu_filter = (rotorcraft_ids_imu_filter_s){
     .galpha = { 1., 1., 1. },
     .aalpha = { 1., 1., 1. },
-    .malpha = { 1., 1., 1. }
+    .malpha = { 1., 1., 1. },
+
+    .g = { nan(""), nan(""), nan("") },
+    .a = { nan(""), nan(""), nan("") },
+    .m = { nan(""), nan(""), nan("") },
+
+    .gf = { nan(""), nan(""), nan("") },
+    .af = { nan(""), nan(""), nan("") },
+    .mf = { nan(""), nan(""), nan("") }
   };
 
   ids->imu_temp = nan(""); /* init with invalid temp */
@@ -305,11 +313,9 @@ rc_main_log(const rotorcraft_ids_battery_s *battery, double imu_temp,
             const rotorcraft_ids_rotor_data_s *rotor_data,
             const rotorcraft_ids_sensor_time_s_rate_s *measured_rate,
             const rotorcraft_rotor_measure *rotor_measure,
-            const rotorcraft_imu *imu, const rotorcraft_mag *mag,
+            const rotorcraft_ids_imu_filter_s *imu_filter,
             rotorcraft_log_s **log, const genom_context self)
 {
-  or_pose_estimator_state *idata = imu->data(self);
-  or_pose_estimator_state *mdata = mag->data(self);
   or_rotorcraft_output *rdata = rotor_measure->data(self);
   struct timeval tv;
 
@@ -343,9 +349,14 @@ rc_main_log(const rotorcraft_ids_battery_s *battery, double imu_temp,
     (uint64_t)tv.tv_sec, (uint32_t)tv.tv_usec * 1000, imu_temp,
     measured_rate->imu, measured_rate->mag, measured_rate->motor,
     battery->level,
-    idata->avel._value.wx, idata->avel._value.wy, idata->avel._value.wz,
-    idata->acc._value.ax, idata->acc._value.ay, idata->acc._value.az,
-    mdata->att._value.qx, mdata->att._value.qy, mdata->att._value.qz,
+
+    imu_filter->gf[0], imu_filter->gf[1], imu_filter->gf[2],
+    imu_filter->af[0], imu_filter->af[1], imu_filter->af[2],
+    imu_filter->mf[0], imu_filter->mf[1], imu_filter->mf[2],
+
+    imu_filter->g[0], imu_filter->g[1], imu_filter->g[2],
+    imu_filter->a[0], imu_filter->a[1], imu_filter->a[2],
+    imu_filter->m[0], imu_filter->m[1], imu_filter->m[2],
 
     rotor_data->wd[0], rotor_data->wd[1], rotor_data->wd[2],
     rotor_data->wd[3], rotor_data->wd[4], rotor_data->wd[5],
