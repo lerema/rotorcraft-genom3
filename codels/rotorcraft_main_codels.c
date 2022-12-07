@@ -301,7 +301,7 @@ mk_main_perm(const rotorcraft_conn_s *conn,
  * Yields to rotorcraft_pause_main.
  */
 genom_event
-rc_main_log(double imu_temp,
+rc_main_log(const rotorcraft_ids_battery_s *battery, double imu_temp,
             const rotorcraft_ids_rotor_data_s *rotor_data,
             const rotorcraft_ids_sensor_time_s_rate_s *measured_rate,
             const rotorcraft_rotor_measure *rotor_measure,
@@ -342,6 +342,7 @@ rc_main_log(double imu_temp,
     (*log)->skipped ? "\n" : "",
     (uint64_t)tv.tv_sec, (uint32_t)tv.tv_usec * 1000, imu_temp,
     measured_rate->imu, measured_rate->mag, measured_rate->motor,
+    battery->level,
     idata->avel._value.wx, idata->avel._value.wy, idata->avel._value.wz,
     idata->acc._value.ax, idata->acc._value.ay, idata->acc._value.az,
     mdata->att._value.qx, mdata->att._value.qy, mdata->att._value.qz,

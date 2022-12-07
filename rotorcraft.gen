@@ -271,7 +271,7 @@ component rotorcraft {
                              inout imu_calibration_updated,
                              out rotor_measure, out imu, out mag)
       yield log;
-    codel<log> rc_main_log(in imu_temp, in rotor_data,
+    codel<log> rc_main_log(in battery, in imu_temp, in rotor_data,
                            in sensor_time.measured_rate, in rotor_measure,
                            in imu, in mag, inout log)
       yield pause::main;
