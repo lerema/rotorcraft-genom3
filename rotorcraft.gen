@@ -205,7 +205,7 @@ component rotorcraft {
     }) {
     doc "Get current gyroscopes and accelerometer calibration data.";
   };
-  attribute set_imu_calibration(in imu_calibration = {
+  function set_imu_calibration(in ids::imu_calibration_s imu_calibration = {
       .gscale =: "Gyroscopes 3×3 scaling matrix (row major)",
       .gbias =: "Gyroscopes bias vector",
       .gstddev =: "Gyroscopes measurement noise",
@@ -214,7 +214,8 @@ component rotorcraft {
       .astddev =: "Accelerometers measurement noise",
       .temp = 21.: "Average IMU temperature (°C)"
     }) {
-    doc "Set current gyroscopes and accelerometer calibration data.";
+    doc "Set current gyroscopes, accelerometer and magnetometer calibration";
+    doc "data.";
     doc "";
     doc "Calling this service is mandatory after each component start, in";
     doc "order to obtain precise IMU measurements.";
@@ -223,7 +224,10 @@ component rotorcraft {
     doc "<<get_imu_calibration>> after a successful <<calibrate_imu>>";
     doc "(which see).";
 
-    validate mk_set_imu_calibration(out imu_calibration_updated);
+    codel rc_set_imu_calibration(local in imu_calibration,
+                                 ids out imu_calibration::out,
+                                 out imu_calibration_updated);
+    codel rc_log_imu_calibration(ids in imu_calibration, inout log);
   };
 
   function get_imu_filter(
@@ -239,6 +243,7 @@ component rotorcraft {
     in double mfc[3] =: "Magnetometer X,Y,Z cut-off frequencies") {
     codel rc_set_imu_filter(in gfc, in afc, in mfc, in sensor_time.rate,
                             out imu_filter);
+    codel rc_log_imu_filter(in gfc, in afc, in mfc, inout log);
   };
   attribute get_imu_temp(out imu_temp =: "IMU temperature (°C)") {
     doc "Get current IMU temperature.";
@@ -260,11 +265,15 @@ component rotorcraft {
     codel<start> mk_main_init(out ::ids, in imu, in mag)
       yield main;
     codel<main> mk_main_perm(in conn, in battery,
-                             in imu_calibration, in imu_temp,
+                             in imu_calibration,
                              in rotor_data,
                              inout sensor_time, inout publish_time,
                              inout imu_calibration_updated,
-                             inout log, out rotor_measure, out imu, out mag)
+                             out rotor_measure, out imu, out mag)
+      yield log;
+    codel<log> rc_main_log(in imu_temp, in rotor_data,
+                           in sensor_time.measured_rate, in rotor_measure,
+                           in imu, in mag, inout log)
       yield pause::main;
 
     codel<stop> mk_main_stop(inout log)
@@ -655,12 +664,16 @@ component rotorcraft {
 
   /* --- logging ----------------------------------------------------------- */
 
-  function log(in string<64> path = "/tmp/rotorcraft.log": "Log file name",
+  activity log(in string<64> path = "/tmp/rotorcraft.log": "Log file name",
                in unsigned long decimation = 1: "Reduced logging frequency") {
     doc		"Log IMU and commanded wrench";
+    task	main;
 
-    codel mk_log_start(in path, in decimation, in imu_calibration,
-                       in imu_filter, in sensor_time.rate, inout log);
+    validate rc_log_open(in path, in decimation, inout log);
+
+    codel<start> rc_log_header(in imu_calibration,
+                               in imu_filter, in sensor_time.rate, inout log)
+      yield ether;
 
     throw e_sys;
   };

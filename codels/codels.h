@@ -30,6 +30,7 @@
 #include "rotorcraft_c_types.h"
 
 struct rotorcraft_log_s {
+  int fd;
   struct aiocb req;
   char buffer[4096];
   bool pending, skipped;

@@ -20,6 +20,7 @@
 #include <err.h>
 #include <float.h>
 #include <math.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "rotorcraft_c_types.h"
@@ -114,6 +115,7 @@ mk_main_init(rotorcraft_ids *ids, const rotorcraft_imu *imu,
   ids->log = malloc(sizeof(*ids->log));
   if (!ids->log) abort();
   *ids->log = (rotorcraft_log_s){
+    .fd = -1,
     .req = {
       .aio_fildes = -1,
       .aio_offset = 0,
@@ -155,17 +157,16 @@ mk_main_init(rotorcraft_ids *ids, const rotorcraft_imu *imu,
 /** Codel mk_main_perm of task main.
  *
  * Triggered by rotorcraft_main.
- * Yields to rotorcraft_pause_main.
+ * Yields to rotorcraft_log.
  */
 genom_event
 mk_main_perm(const rotorcraft_conn_s *conn,
              const rotorcraft_ids_battery_s *battery,
              const rotorcraft_ids_imu_calibration_s *imu_calibration,
-             double imu_temp,
              const rotorcraft_ids_rotor_data_s *rotor_data,
              rotorcraft_ids_sensor_time_s *sensor_time,
              rotorcraft_ids_publish_time_s *publish_time,
-             bool *imu_calibration_updated, rotorcraft_log_s **log,
+             bool *imu_calibration_updated,
              const rotorcraft_rotor_measure *rotor_measure,
              const rotorcraft_imu *imu, const rotorcraft_mag *mag,
              const genom_context self)
@@ -290,62 +291,82 @@ mk_main_perm(const rotorcraft_conn_s *conn,
     }
   }
 
+  return rotorcraft_log;
+}
 
-  /* log */
-  if ((*log)->req.aio_fildes >= 0) {
-    (*log)->total++;
-    if ((*log)->total % (*log)->decimation == 0) {
-      if ((*log)->pending) {
-        if (aio_error(&(*log)->req) != EINPROGRESS) {
-          (*log)->pending = false;
-          if (aio_return(&(*log)->req) <= 0) {
-            warn("log");
-            close((*log)->req.aio_fildes);
-            (*log)->req.aio_fildes = -1;
-          }
-        } else {
-          (*log)->skipped = true;
-          (*log)->missed++;
-        }
-      }
+
+/** Codel rc_main_log of task main.
+ *
+ * Triggered by rotorcraft_log.
+ * Yields to rotorcraft_pause_main.
+ */
+genom_event
+rc_main_log(double imu_temp,
+            const rotorcraft_ids_rotor_data_s *rotor_data,
+            const rotorcraft_ids_sensor_time_s_rate_s *measured_rate,
+            const rotorcraft_rotor_measure *rotor_measure,
+            const rotorcraft_imu *imu, const rotorcraft_mag *mag,
+            rotorcraft_log_s **log, const genom_context self)
+{
+  or_pose_estimator_state *idata = imu->data(self);
+  or_pose_estimator_state *mdata = mag->data(self);
+  or_rotorcraft_output *rdata = rotor_measure->data(self);
+  struct timeval tv;
+
+  if ((*log)->req.aio_fildes < 0) return rotorcraft_pause_main;
+
+  (*log)->total++;
+  if ((*log)->total % (*log)->decimation) return rotorcraft_pause_main;
+
+  if ((*log)->pending) {
+    switch (aio_error(&(*log)->req)) {
+      case EINPROGRESS:
+        (*log)->skipped = true;
+        (*log)->missed++;
+        return rotorcraft_pause_main;
     }
 
-    if ((*log)->req.aio_fildes >= 0 && !(*log)->pending) {
-      (*log)->req.aio_nbytes = snprintf(
-        (*log)->buffer, sizeof((*log)->buffer),
-        "%s" rotorcraft_log_line "\n",
-        (*log)->skipped ? "\n" : "",
-        (uint64_t)tv.tv_sec, (uint32_t)tv.tv_usec * 1000, imu_temp,
-        sensor_time->measured_rate.imu,
-        sensor_time->measured_rate.mag,
-        sensor_time->measured_rate.motor,
-        idata->avel._value.wx, idata->avel._value.wy, idata->avel._value.wz,
-        idata->acc._value.ax, idata->acc._value.ay, idata->acc._value.az,
-        mdata->att._value.qx, mdata->att._value.qy, mdata->att._value.qz,
-
-        rotor_data->wd[0], rotor_data->wd[1], rotor_data->wd[2],
-        rotor_data->wd[3], rotor_data->wd[4], rotor_data->wd[5],
-        rotor_data->wd[6], rotor_data->wd[7],
-
-        rdata->rotor._buffer[0].velocity, rdata->rotor._buffer[1].velocity,
-        rdata->rotor._buffer[2].velocity, rdata->rotor._buffer[3].velocity,
-        rdata->rotor._buffer[4].velocity, rdata->rotor._buffer[5].velocity,
-        rdata->rotor._buffer[6].velocity, rdata->rotor._buffer[7].velocity,
-
-        rotor_data->clkrate[0], rotor_data->clkrate[1], rotor_data->clkrate[2],
-        rotor_data->clkrate[3], rotor_data->clkrate[4], rotor_data->clkrate[5],
-        rotor_data->clkrate[6], rotor_data->clkrate[7]);
-
-      if (aio_write(&(*log)->req)) {
-        warn("log");
-        close((*log)->req.aio_fildes);
-        (*log)->req.aio_fildes = -1;
-      } else
-        (*log)->pending = true;
-
-      (*log)->skipped = false;
+    (*log)->pending = false;
+    if (aio_return(&(*log)->req) <= 0) {
+      warn("log");
+      mk_log_stop(log, self);
+      return rotorcraft_pause_main;
     }
   }
+
+  gettimeofday(&tv, NULL);
+
+  (*log)->req.aio_nbytes = snprintf(
+    (*log)->buffer, sizeof((*log)->buffer),
+    "%s" rotorcraft_log_line "\n",
+    (*log)->skipped ? "\n" : "",
+    (uint64_t)tv.tv_sec, (uint32_t)tv.tv_usec * 1000, imu_temp,
+    measured_rate->imu, measured_rate->mag, measured_rate->motor,
+    idata->avel._value.wx, idata->avel._value.wy, idata->avel._value.wz,
+    idata->acc._value.ax, idata->acc._value.ay, idata->acc._value.az,
+    mdata->att._value.qx, mdata->att._value.qy, mdata->att._value.qz,
+
+    rotor_data->wd[0], rotor_data->wd[1], rotor_data->wd[2],
+    rotor_data->wd[3], rotor_data->wd[4], rotor_data->wd[5],
+    rotor_data->wd[6], rotor_data->wd[7],
+
+    rdata->rotor._buffer[0].velocity, rdata->rotor._buffer[1].velocity,
+    rdata->rotor._buffer[2].velocity, rdata->rotor._buffer[3].velocity,
+    rdata->rotor._buffer[4].velocity, rdata->rotor._buffer[5].velocity,
+    rdata->rotor._buffer[6].velocity, rdata->rotor._buffer[7].velocity,
+
+    rotor_data->clkrate[0], rotor_data->clkrate[1], rotor_data->clkrate[2],
+    rotor_data->clkrate[3], rotor_data->clkrate[4], rotor_data->clkrate[5],
+    rotor_data->clkrate[6], rotor_data->clkrate[7]);
+
+  if (aio_write(&(*log)->req)) {
+    warn("log");
+    mk_log_stop(log, self);
+    return rotorcraft_pause_main;
+  }
+
+  (*log)->pending = true;
+  (*log)->skipped = false;
 
   return rotorcraft_pause_main;
 }
@@ -1057,6 +1078,49 @@ mk_stop(const rotorcraft_conn_s *conn,
   }
 
   return rotorcraft_ether;
+}
+
+
+/* --- Activity log ----------------------------------------------------- */
+
+/** Codel rc_log_header of activity log.
+ *
+ * Triggered by rotorcraft_start.
+ * Yields to rotorcraft_ether.
+ * Throws rotorcraft_e_sys.
+ */
+genom_event
+rc_log_header(const rotorcraft_ids_imu_calibration_s *imu_calibration,
+              const rotorcraft_ids_imu_filter_s *imu_filter,
+              const rotorcraft_ids_sensor_time_s_rate_s *rate,
+              rotorcraft_log_s **log, const genom_context self)
+{
+  double gfc[3], afc[3], mfc[3];
+  int s;
+
+
+  /* log header with some config info */
+  s = dprintf(
+    (*log)->fd, "# logged on %s#\n" /* note that ctime(3) has a \n */,
+    ctime(&(time_t){ time(NULL) }));
+  if (s < 0) goto err;
+
+  if (rc_log_imu_calibration(imu_calibration, log, self)) goto err;
+
+  rc_get_imu_filter(imu_filter, rate, gfc, afc, mfc, self);
+  if (rc_log_imu_filter(gfc, afc, mfc, log, self)) goto err;
+
+  s = dprintf((*log)->fd, rotorcraft_log_header "\n");
+  if (s < 0) goto err;
+
+
+  /* enable async writes */
+  (*log)->req.aio_fildes = (*log)->fd;
+
+  return rotorcraft_ether;
+err:
+  mk_log_stop(log, self);
+  return mk_e_sys_error("log", self);
 }
 
 

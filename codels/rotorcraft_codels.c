@@ -17,12 +17,13 @@
 #include "acrotorcraft.h"
 
 #include <sys/time.h>
+
+#include <err.h>
 #include <fcntl.h>
 #include <float.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
 #include <unistd.h>
 
 #include "rotorcraft_c_types.h"
@@ -110,24 +111,6 @@ mk_set_battery_limits(double min, double max,
 }
 
 
-/* --- Attribute set_imu_calibration ------------------------------------ */
-
-/** Validation codel mk_set_imu_calibration of attribute set_imu_calibration.
- *
- * Returns genom_ok.
- * Throws .
- */
-genom_event
-mk_set_imu_calibration(bool *imu_calibration_updated,
-                       const genom_context self)
-{
-  (void)self;
-
-  *imu_calibration_updated = true;
-  return genom_ok;
-}
-
-
 /* --- Function set_velocity -------------------------------------------- */
 
 /** Validation codel mk_validate_input of function set_velocity.
@@ -169,6 +152,117 @@ mk_validate_input(const or_rotorcraft_rotor_state state[8],
  */
 /* already defined in service set_velocity validation */
 
+
+
+/* --- Activity log ----------------------------------------------------- */
+
+/** Validation codel rc_log_open of activity log.
+ *
+ * Returns genom_ok.
+ * Throws rotorcraft_e_sys.
+ */
+genom_event
+rc_log_open(const char path[64], uint32_t decimation,
+            rotorcraft_log_s **log, const genom_context self)
+{
+  int fd;
+
+  fd = open(path, O_WRONLY|O_APPEND|O_CREAT|O_TRUNC, 0666);
+  if (fd < 0) return mk_e_sys_error(path, self);
+
+  if ((*log)->fd >= 0)
+    close((*log)->fd);
+  if ((*log)->req.aio_fildes >= 0) {
+    if ((*log)->pending)
+      while (aio_error(&(*log)->req) == EINPROGRESS)
+        /* empty body */;
+  }
+  (*log)->fd = fd;
+  (*log)->req.aio_fildes = -1;
+  (*log)->pending = false;
+  (*log)->skipped = false;
+  (*log)->decimation = decimation < 1 ? 1 : decimation;
+  (*log)->missed = 0;
+  (*log)->total = 0;
+
+  return genom_ok;
+}
+
+
+/* --- Function set_imu_calibration ------------------------------------- */
+
+/** Codel rc_set_imu_calibration of function set_imu_calibration.
+ *
+ * Returns genom_ok.
+ */
+genom_event
+rc_set_imu_calibration(const rotorcraft_ids_imu_calibration_s *imu_calibration,
+                       rotorcraft_ids_imu_calibration_s *out,
+                       bool *imu_calibration_updated,
+                       const genom_context self)
+{
+  (void)self;
+
+  *out = *imu_calibration;
+  *imu_calibration_updated = true;
+  return genom_ok;
+}
+
+/** Codel rc_log_imu_calibration of function set_imu_calibration.
+ *
+ * Returns genom_ok.
+ * Throws .
+ */
+genom_event
+rc_log_imu_calibration(const rotorcraft_ids_imu_calibration_s *imu_calibration,
+                       rotorcraft_log_s **log,
+                       const genom_context self)
+{
+  int s;
+
+  if ((*log)->fd < 0) return genom_ok;
+
+  s = dprintf(
+    (*log)->fd,
+    "# IMU calibration (%g°C average)\n"
+#define mk_log_cal(x)                           \
+    "# " #x "scale {\n"                         \
+    "#  0 %20g  1 %20g  2 %20g\n"               \
+    "#  3 %20g  4 %20g  5 %20g\n"               \
+    "#  6 %20g  7 %20g  8 %20g\n"               \
+    "# }\n"                                     \
+    "# " #x "bias {\n"                          \
+    "#  0 %20g  1 %20g  2 %20g\n"               \
+    "# }\n"                                     \
+    "# " #x "stddev {\n"                        \
+    "#  0 %20g  1 %20g  2 %20g\n"               \
+    "# }\n"
+
+    mk_log_cal(g) mk_log_cal(a) mk_log_cal(m)
+#undef mk_log_cal
+    "#\n",
+
+    imu_calibration->temp,
+
+#define mk_calm(x, y) imu_calibration->x ## y
+#define mk_log_cal(x)                                                   \
+    mk_calm(x, scale)[0], mk_calm(x, scale)[1], mk_calm(x, scale)[2],   \
+    mk_calm(x, scale)[3], mk_calm(x, scale)[4], mk_calm(x, scale)[5],   \
+    mk_calm(x, scale)[6], mk_calm(x, scale)[7], mk_calm(x, scale)[8],   \
+    mk_calm(x, bias)[0], mk_calm(x, bias)[1], mk_calm(x, bias)[2],      \
+    mk_calm(x, stddev)[0], mk_calm(x, stddev)[1], mk_calm(x, stddev)[2]
+
+    mk_log_cal(g), mk_log_cal(a), mk_log_cal(m)
+#undef mk_log_cal
+#undef mk_calm
+    );
+  if (s < 0) {
+    warn("log");
+    mk_log_stop(log, self);
+  }
+
+  return genom_ok;
+}
 
 
 /* --- Function get_imu_filter ------------------------------------------ */
@@ -255,6 +349,43 @@ rc_set_imu_filter(const double gfc[3], const double afc[3],
       imu_filter->malpha[i] = wc * mfc[i] / (wc * mfc[i] + 1);
     else
       imu_filter->malpha[i] = 1.;
+
+  return genom_ok;
+}
+
+/** Codel rc_log_imu_filter of function set_imu_filter.
+ *
+ * Returns genom_ok.
+ */
+genom_event
+rc_log_imu_filter(const double gfc[3], const double afc[3],
+                  const double mfc[3], rotorcraft_log_s **log,
+                  const genom_context self)
+{
+  int s;
+
+  if ((*log)->fd < 0) return genom_ok;
+
+  s = dprintf(
+    (*log)->fd,
+    "# IMU low-pass filter cutoff frequencies\n"
+#define mk_log_fc(x)                           \
+    "# " #x "fc { x %g  y %g  z %g }\n"
+
+    mk_log_fc(g) mk_log_fc(a) mk_log_fc(m)
+#undef mk_log_fc
+    "#\n",
+
+#define mk_log_fc(x)                           \
+    x ## fc[0], x ## fc[1], x ## fc[2]
+
+    mk_log_fc(g), mk_log_fc(a), mk_log_fc(m)
+#undef mk_log_fc
+    );
+  if (s < 0) {
+    warn("log");
+    mk_log_stop(log, self);
+  }
 
   return genom_ok;
 }
@@ -466,100 +597,6 @@ mk_set_throttle(const rotorcraft_conn_s *conn,
 }
 
 
-/* --- Function log ----------------------------------------------------- */
-
-/** Codel mk_log_start of function log.
- *
- * Returns genom_ok.
- * Throws rotorcraft_e_sys.
- */
-genom_event
-mk_log_start(const char path[64], uint32_t decimation,
-             const rotorcraft_ids_imu_calibration_s *imu_calibration,
-             const rotorcraft_ids_imu_filter_s *imu_filter,
-             const rotorcraft_ids_sensor_time_s_rate_s *rate,
-             rotorcraft_log_s **log, const genom_context self)
-{
-  double gfc[3], afc[3], mfc[3];
-  time_t t;
-  int fd;
-  int s;
-
-  t = time(NULL);
-  rc_get_imu_filter(imu_filter, rate, gfc, afc, mfc, self);
-
-  fd = open(path, O_WRONLY|O_APPEND|O_CREAT|O_TRUNC, 0666);
-  if (fd < 0) return mk_e_sys_error(path, self);
-
-  /* log header with some config info */
-  s = dprintf(
-    fd,
-    "# logged on %s" /* ctime(3) has a \n */
-    "#\n"
-    "# IMU calibration (%g°C average)\n"
-#define mk_log_cal(x)                           \
-    "# " #x "scale {\n"                         \
-    "#  0 %20g  1 %20g  2 %20g\n"               \
-    "#  3 %20g  4 %20g  5 %20g\n"               \
-    "#  6 %20g  7 %20g  8 %20g\n"               \
-    "# }\n"                                     \
-    "# " #x "bias {\n"                          \
-    "#  0 %20g  1 %20g  2 %20g\n"               \
-    "# }\n"                                     \
-    "# " #x "stddev {\n"                        \
-    "#  0 %20g  1 %20g  2 %20g\n"               \
-    "# }\n"
-
-    mk_log_cal(g) mk_log_cal(a) mk_log_cal(m)
-#undef mk_log_cal
-    "#\n"
-    "# IMU low-pass filter cutoff frequencies\n"
-#define mk_log_fc(x)                           \
-    "# " #x "fc { x %g  y %g  z %g }\n"
-
-    mk_log_fc(g) mk_log_fc(a) mk_log_fc(m)
-#undef mk_log_fc
-    "#\n"
-    rotorcraft_log_header "\n",
-
-    ctime(&t), imu_calibration->temp,
-#define mk_calm(x, y) imu_calibration->x ## y
-#define mk_log_cal(x)                                                   \
-    mk_calm(x, scale)[0], mk_calm(x, scale)[1], mk_calm(x, scale)[2],   \
-    mk_calm(x, scale)[3], mk_calm(x, scale)[4], mk_calm(x, scale)[5],   \
-    mk_calm(x, scale)[6], mk_calm(x, scale)[7], mk_calm(x, scale)[8],   \
-    mk_calm(x, bias)[0], mk_calm(x, bias)[1], mk_calm(x, bias)[2],      \
-    mk_calm(x, stddev)[0], mk_calm(x, stddev)[1], mk_calm(x, stddev)[2]
-
-    mk_log_cal(g), mk_log_cal(a), mk_log_cal(m),
-#undef mk_log_cal
-#undef mk_calm
-#define mk_log_fc(x)                           \
-    x ## fc[0], x ## fc[1], x ## fc[2]
-
-    mk_log_fc(g), mk_log_fc(a), mk_log_fc(m)
-#undef mk_log_fc
-    );
-  if (s < 0) return mk_e_sys_error(path, self);
-
-  if ((*log)->req.aio_fildes >= 0) {
-    close((*log)->req.aio_fildes);
-
-    if ((*log)->pending)
-      while (aio_error(&(*log)->req) == EINPROGRESS)
-        /* empty body */;
-  }
-  (*log)->req.aio_fildes = fd;
-  (*log)->pending = false;
-  (*log)->skipped = false;
-  (*log)->decimation = decimation < 1 ? 1 : decimation;
-  (*log)->missed = 0;
-  (*log)->total = 0;
-
-  return genom_ok;
-}
-
-
 /* --- Function log_stop ------------------------------------------------ */
 
 /** Codel mk_log_stop of function log_stop.
@@ -573,7 +610,7 @@ mk_log_stop(rotorcraft_log_s **log, const genom_context self)
 
   if (*log && (*log)->req.aio_fildes >= 0)
     close((*log)->req.aio_fildes);
-  (*log)->req.aio_fildes = -1;
+  (*log)->fd = (*log)->req.aio_fildes = -1;
 
   return genom_ok;
 }

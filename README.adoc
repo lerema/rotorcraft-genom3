@@ -372,7 +372,7 @@ Get current gyroscopes and accelerometer calibration data.
 '''
 
 [[set_imu_calibration]]
-=== set_imu_calibration (attribute)
+=== set_imu_calibration (function)
 
 [role="small", width="50%", float="right", cols="1"]
 |===
@@ -392,7 +392,8 @@ a|.Inputs
 
 |===
 
-Set current gyroscopes and accelerometer calibration data.
+Set current gyroscopes, accelerometer and magnetometer calibration
+data.
 
 Calling this service is mandatory after each component start, in
 order to obtain precise IMU measurements.
@@ -1018,7 +1019,7 @@ Stop all propellers
 '''
 
 [[log]]
-=== log (function)
+=== log (activity)
 
 [role="small", width="50%", float="right", cols="1"]
 |===
@@ -1034,6 +1035,10 @@ a|.Throws
  ** `short` `code`
  ** `string<128>` `what`
 
+a|.Context
+[disc]
+  * In task `<<main>>`
+  (frequency 1000.0 _Hz_)
 |===
 
 Log IMU and commanded wrench
