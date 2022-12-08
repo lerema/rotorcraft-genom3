@@ -140,11 +140,16 @@ mk_comm_nodata(rotorcraft_conn_s **conn,
                rotorcraft_ids_imu_filter_s *imu_filter,
                rotorcraft_ids_sensor_time_s *sensor_time,
                const rotorcraft_imu *imu, const rotorcraft_mag *mag,
-               rotorcraft_ids_battery_s *battery,
+               rotorcraft_ids_rotor_data_s rotor_data[8],
+               rotorcraft_ids_battery_s *battery, double *imu_temp,
                const genom_context self)
 {
   or_pose_estimator_state *idata = imu->data(self);
   or_pose_estimator_state *mdata = mag->data(self);
+  struct timeval tv;
+  int i;
+
+  gettimeofday(&tv, NULL);
 
   /* reset exported data in case of timeout */
   imu_filter->g[0] = imu_filter->g[1] = imu_filter->g[2] =
@@ -154,6 +159,8 @@ mk_comm_nodata(rotorcraft_conn_s **conn,
   imu_filter->af[0] = imu_filter->af[1] = imu_filter->af[2] =
   imu_filter->mf[0] = imu_filter->mf[1] = imu_filter->mf[2] = nan("");
 
+  idata->ts.sec = tv.tv_sec;
+  idata->ts.nsec = tv.tv_usec * 1000;
   idata->avel._present = false;
   idata->avel._value.wx = idata->avel._value.wy = idata->avel._value.wz =
     nan("");
@@ -161,13 +168,30 @@ mk_comm_nodata(rotorcraft_conn_s **conn,
   idata->acc._value.ax = idata->acc._value.ay = idata->acc._value.az =
     nan("");
 
+  mdata->ts.sec = tv.tv_sec;
+  mdata->ts.nsec = tv.tv_usec * 1000;
   mdata->att._present = false;
   mdata->att._value.qw =
-    idata->att._value.qy =
-    idata->att._value.qz =
-    idata->att._value.qx = nan("");
+    mdata->att._value.qy =
+    mdata->att._value.qz =
+    mdata->att._value.qx = nan("");
 
-  battery->level = 0.;
+  battery->ts.sec = tv.tv_sec;
+  battery->ts.nsec = tv.tv_usec * 1000;
+  battery->level = nan("");
+
+  *imu_temp = nan("");
+
+  for(i = 0; i < or_rotorcraft_max_rotors; i++)
+    rotor_data[i].state = (or_rotorcraft_rotor_state){
+      .ts.sec = tv.tv_sec, .ts.nsec = tv.tv_usec * 1000,
+      .emerg = 0, .spinning = 0, .starting = 0,
+      .disabled = rotor_data[i].state.disabled,
+      .velocity = nan(""),
+      .throttle = nan(""),
+      .consumption = nan(""),
+      .energy_level = nan("")
+    };
 
   if (mk_set_sensor_rate(&sensor_time->rate, *conn, NULL, sensor_time, self))
     mk_disconnect_start(conn, self);
@@ -188,7 +212,7 @@ mk_comm_recv(rotorcraft_conn_s **conn,
              rotorcraft_ids_imu_filter_s *imu_filter,
              rotorcraft_ids_sensor_time_s *sensor_time,
              const rotorcraft_imu *imu, const rotorcraft_mag *mag,
-             rotorcraft_ids_rotor_data_s *rotor_data,
+             rotorcraft_ids_rotor_data_s rotor_data[8],
              rotorcraft_ids_battery_s *battery, double *imu_temp,
              const genom_context self)
 {
@@ -350,31 +374,31 @@ mk_comm_recv_msg(struct mk_channel_s *chan,
         id--;
         if (seq == sensor_time->motor[id].seq) break;
 
-        if (!rotor_data->state[id].ts.sec && rotor_data->state[id].disabled)
-          rotor_data->state[id].disabled = 0;
+        if (!rotor_data[id].state.ts.sec && rotor_data[id].state.disabled)
+          rotor_data[id].state.disabled = 0;
 
         mk_get_ts(
           seq, tv, sensor_time->rate.motor, &sensor_time->motor[id],
-          &rotor_data->state[id].ts, &sensor_time->measured_rate.motor);
+          &rotor_data[id].state.ts, &sensor_time->measured_rate.motor);
 
-        rotor_data->state[id].emerg = !!(state & 0x80);
-        rotor_data->state[id].spinning = !!(state & 0x20);
-        rotor_data->state[id].starting = !!(state & 0x10);
+        rotor_data[id].state.emerg = !!(state & 0x80);
+        rotor_data[id].state.spinning = !!(state & 0x20);
+        rotor_data[id].state.starting = !!(state & 0x10);
 
         v16 = ((int16_t)(*msg++) << 8);
         v16 |= ((uint16_t)(*msg++) << 0);
-        if (rotor_data->state[id].spinning)
-          rotor_data->state[id].velocity = v16 ? 1e6/2/v16 : 0.;
+        if (rotor_data[id].state.spinning)
+          rotor_data[id].state.velocity = v16 ? 1e6/2/v16 : 0.;
         else
-          rotor_data->state[id].velocity = 0.;
+          rotor_data[id].state.velocity = 0.;
 
         v16 = ((int16_t)(*msg++) << 8);
         v16 |= ((uint16_t)(*msg++) << 0);
-        rotor_data->state[id].throttle = v16 * 100./1023.;
+        rotor_data[id].state.throttle = v16 * 100./1023.;
 
         u16 = ((uint16_t)(*msg++) << 8);
         u16 |= ((uint16_t)(*msg++) << 0);
-        rotor_data->state[id].consumption = u16 / 1e3;
+        rotor_data[id].state.consumption = u16 / 1e3;
       } else
         warnx("bad motor data message");
       break;
@@ -388,10 +412,13 @@ mk_comm_recv_msg(struct mk_channel_s *chan,
         u16 |= ((uint16_t)(*msg++) << 0);
         battery->level = u16/1000.;
 
+        battery->ts.sec = tv.tv_sec;
+        battery->ts.nsec = tv.tv_usec * 1000;
+
         p = 100. *
             (battery->level - battery->min)/(battery->max - battery->min);
         for(i = 0; i < or_rotorcraft_max_rotors; i++)
-          rotor_data->state[i].energy_level = p;
+          rotor_data[i].state.energy_level = p;
       } else
         warnx("bad battery message");
       break;
@@ -404,7 +431,7 @@ mk_comm_recv_msg(struct mk_channel_s *chan,
         id += chan->minid - 1; /* apply hw offset */
         if (id < chan->minid || id > chan->maxid) break;
         id--;
-        rotor_data->clkrate[id] = *msg;
+        rotor_data[id].clkrate = *msg;
       } else
         warnx("bad clock rate message");
       break;

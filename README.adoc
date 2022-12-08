@@ -274,6 +274,9 @@ will smoothly stop the motors.
 a|.Outputs
 [disc]
  * `struct ::rotorcraft::ids::battery_s` `battery`
+ ** `struct ::or::time::ts` `ts`
+ *** `long` `sec`
+ *** `long` `nsec`
  ** `double` `min` Minimum acceptable battery voltage
  ** `double` `max` Full battery voltage
  ** `double` `level` Current battery voltage

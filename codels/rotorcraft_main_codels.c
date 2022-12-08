@@ -38,14 +38,18 @@ genom_event
 mk_main_init(rotorcraft_ids *ids, const rotorcraft_imu *imu,
              const rotorcraft_mag *mag, const genom_context self)
 {
+  struct timeval tv;
   genom_event e;
   size_t i;
 
+  gettimeofday(&tv, NULL);
+
+  ids->conn = malloc(sizeof(*ids->conn));
+  if (!ids->conn) return mk_e_sys_error(NULL, self);
+  *ids->conn = (rotorcraft_conn_s){ .chan = NULL, .n = 0 };
+
   ids->sensor_time = (rotorcraft_ids_sensor_time_s){
     .rate = { .imu = 1000., .mag = 100., .motor = 100., .battery = 1. }
-  };
-  ids->publish_time = (rotorcraft_ids_publish_time_s){
-    .imu = { 0 }, .mag =  { 0 }, .motor = {{ 0 }}
   };
   ids->imu_filter = (rotorcraft_ids_imu_filter_s){
     .galpha = { 1., 1., 1. },
@@ -61,19 +65,20 @@ mk_main_init(rotorcraft_ids *ids, const rotorcraft_imu *imu,
     .mf = { nan(""), nan(""), nan("") }
   };
 
-  ids->imu_temp = nan(""); /* init with invalid temp */
-
-  ids->conn = malloc(sizeof(*ids->conn));
-  if (!ids->conn) return mk_e_sys_error(NULL, self);
-  *ids->conn = (rotorcraft_conn_s){ .chan = NULL, .n = 0 };
-
   e = mk_set_sensor_rate(&ids->sensor_time.rate,
                          ids->conn, &ids->imu_filter, &ids->sensor_time, self);
   if (e) return e;
 
-  ids->battery.min = 14.0;
-  ids->battery.max = 16.8;
-  ids->battery.level = 0.;
+  ids->publish_time = (rotorcraft_ids_publish_time_s){ 0 };
+  ids->log_time = (rotorcraft_ids_publish_time_s){ 0 } ;
+
+  ids->imu_temp = nan("");
+
+  ids->battery = (rotorcraft_ids_battery_s){
+    .ts = { .sec = tv.tv_sec, .nsec = tv.tv_usec * 1000 },
+    .min = 14.0, .max = 16.8,
+    .level = nan("")
+  };
 
   ids->calib_param = (rotorcraft_ids_calibration_param_s){
     .motion_tolerance = 10.
@@ -106,14 +111,16 @@ mk_main_init(rotorcraft_ids *ids, const rotorcraft_imu *imu,
   ids->imu_calibration_updated = true;
 
   for(i = 0; i < or_rotorcraft_max_rotors; i++) {
-    ids->rotor_data.state[i] = (or_rotorcraft_rotor_state){
-      .ts = { 0, 0 },
-      .emerg = false, .spinning = false, .starting = false, .disabled = true,
-      .velocity = nan(""), .throttle = nan(""), .consumption = nan(""),
-      .energy_level = nan("")
+    ids->rotor_data[i] = (rotorcraft_ids_rotor_data_s){
+      .state = {
+        .ts = { .sec = tv.tv_sec, .nsec = tv.tv_usec * 1000 },
+        .emerg = false, .spinning = false, .starting = false, .disabled = true,
+        .velocity = nan(""), .throttle = nan(""), .consumption = nan(""),
+        .energy_level = nan("")
+      },
+      .wd = 0.,
+      .clkrate = 0
     };
-    ids->rotor_data.wd[i] = 0.;
-    ids->rotor_data.clkrate[i] = 0;
   }
 
   ids->servo.timeout = 30.;
@@ -138,7 +145,7 @@ mk_main_init(rotorcraft_ids *ids, const rotorcraft_imu *imu,
   };
 
   *imu->data(self) = *mag->data(self) = (or_pose_estimator_state){
-    .ts = { 0, 0 },
+    .ts = { .sec = tv.tv_sec, .nsec = tv.tv_usec * 1000 },
     .intrinsic = true,
 
     .pos._present = false,
@@ -171,7 +178,7 @@ genom_event
 mk_main_perm(const rotorcraft_conn_s *conn,
              const rotorcraft_ids_battery_s *battery,
              const rotorcraft_ids_imu_calibration_s *imu_calibration,
-             const rotorcraft_ids_rotor_data_s *rotor_data,
+             const rotorcraft_ids_rotor_data_s rotor_data[8],
              rotorcraft_ids_sensor_time_s *sensor_time,
              rotorcraft_ids_publish_time_s *publish_time,
              bool *imu_calibration_updated,
@@ -188,7 +195,8 @@ mk_main_perm(const rotorcraft_conn_s *conn,
   gettimeofday(&tv, NULL);
 
   /* battery level */
-  if (battery->level > 0. && battery->level < battery->min) {
+  if (!isnan(battery->level) &&
+      battery->level > 0. && battery->level < battery->min) {
     static int cnt;
     uint32_t i;
 
@@ -241,32 +249,25 @@ mk_main_perm(const rotorcraft_conn_s *conn,
   }
 
   /* publish, only if timestamps changed */
+  if (rc_neqexts(publish_time->imu, idata->ts))
+    imu->write(self);
+
+  if (rc_neqexts(publish_time->mag, mdata->ts))
+    mag->write(self);
+
   for(i = 0; i < or_rotorcraft_max_rotors; i++) {
-    rdata->rotor._buffer[i] = rotor_data->state[i];
-    if (!rotor_data->state[i].disabled)
+    rdata->rotor._buffer[i] = rotor_data[i].state;
+    if (!rotor_data[i].state.disabled)
       rdata->rotor._length = i + 1;
   }
 
   for(i = 0; i < or_rotorcraft_max_rotors; i++) {
-    if (publish_time->motor[i].sec != rotor_data->state[i].ts.sec ||
-        publish_time->motor[i].nsec != rotor_data->state[i].ts.nsec) {
+    if (rc_neqexts(publish_time->mstate[i], rotor_data[i].state.ts)) {
       rotor_measure->write(self);
       for(; i < or_rotorcraft_max_rotors; i++)
-        publish_time->motor[i] = rotor_data->state[i].ts;
+        publish_time->mstate[i] = rotor_data[i].state.ts;
       break;
     }
-  }
-
-  if (publish_time->imu.sec != idata->ts.sec ||
-      publish_time->imu.nsec != idata->ts.nsec) {
-    imu->write(self);
-    publish_time->imu = idata->ts;
-  }
-
-  if (publish_time->mag.sec != mdata->ts.sec ||
-      publish_time->mag.nsec != mdata->ts.nsec) {
-    mag->write(self);
-    publish_time->mag = mdata->ts;
   }
 
 
@@ -287,11 +288,11 @@ mk_main_perm(const rotorcraft_conn_s *conn,
       sensor_time->measured_rate.mag = 0.;
 
     for(i = 0; i < or_rotorcraft_max_rotors; i++) {
-      if (rotor_data->state[i].disabled) continue;
+      if (rotor_data[i].state.disabled) continue;
 
       rate = 1. / (
-        tv.tv_sec - rotor_data->state[i].ts.sec +
-        (1 + tv.tv_usec * 1000 - rotor_data->state[i].ts.nsec) * 1e-9);
+        tv.tv_sec - rotor_data[i].state.ts.sec +
+        (1 + tv.tv_usec * 1000 - rotor_data[i].state.ts.nsec) * 1e-9);
       if (rate < 0.1 * sensor_time->rate.motor ||
           sensor_time->rate.motor < 0.1) {
         sensor_time->measured_rate.motor = 0.;
@@ -310,14 +311,19 @@ mk_main_perm(const rotorcraft_conn_s *conn,
  */
 genom_event
 rc_main_log(const rotorcraft_ids_battery_s *battery, double imu_temp,
-            const rotorcraft_ids_rotor_data_s *rotor_data,
+            const rotorcraft_ids_rotor_data_s rotor_data[8],
             const rotorcraft_ids_sensor_time_s_rate_s *measured_rate,
             const rotorcraft_rotor_measure *rotor_measure,
+            const rotorcraft_imu *imu, const rotorcraft_mag *mag,
             const rotorcraft_ids_imu_filter_s *imu_filter,
+            rotorcraft_ids_publish_time_s *log_time,
             rotorcraft_log_s **log, const genom_context self)
 {
+  or_pose_estimator_state *idata = imu->data(self);
+  or_pose_estimator_state *mdata = mag->data(self);
   or_rotorcraft_output *rdata = rotor_measure->data(self);
   struct timeval tv;
+  int i;
 
   if ((*log)->req.aio_fildes < 0) return rotorcraft_pause_main;
 
@@ -342,44 +348,89 @@ rc_main_log(const rotorcraft_ids_battery_s *battery, double imu_temp,
 
   gettimeofday(&tv, NULL);
 
-  (*log)->req.aio_nbytes = snprintf(
-    (*log)->buffer, sizeof((*log)->buffer),
-    "%s" rotorcraft_log_line "\n",
-    (*log)->skipped ? "\n" : "",
-    (uint64_t)tv.tv_sec, (uint32_t)tv.tv_usec * 1000, imu_temp,
-    measured_rate->imu, measured_rate->mag, measured_rate->motor,
-    battery->level,
+  /* build log buffer */
+  const char * const end = &(*log)->buffer[sizeof((*log)->buffer)];
+  char *p = (*log)->buffer;
 
-    imu_filter->gf[0], imu_filter->gf[1], imu_filter->gf[2],
-    imu_filter->af[0], imu_filter->af[1], imu_filter->af[2],
-    imu_filter->mf[0], imu_filter->mf[1], imu_filter->mf[2],
+#define xprint(...)                                                     \
+  do {                                                                  \
+    int s = snprintf(p, end-p, __VA_ARGS__);                            \
+    p += s;                                                             \
+    if (s < 0 || p >= end) goto full;                                   \
+  } while(0)
 
-    imu_filter->g[0], imu_filter->g[1], imu_filter->g[2],
-    imu_filter->a[0], imu_filter->a[1], imu_filter->a[2],
-    imu_filter->m[0], imu_filter->m[1], imu_filter->m[2],
+  if ((*log)->skipped) xprint("\n");
+  /* ts */
+  xprint("%"PRIu64".%09d ", (uint64_t)tv.tv_sec, (uint32_t)tv.tv_usec*1000);
 
-    rotor_data->wd[0], rotor_data->wd[1], rotor_data->wd[2],
-    rotor_data->wd[3], rotor_data->wd[4], rotor_data->wd[5],
-    rotor_data->wd[6], rotor_data->wd[7],
+  /* rate */
+  xprint(" %g %g %g ",
+         measured_rate->imu, measured_rate->mag, measured_rate->motor);
 
-    rdata->rotor._buffer[0].velocity, rdata->rotor._buffer[1].velocity,
-    rdata->rotor._buffer[2].velocity, rdata->rotor._buffer[3].velocity,
-    rdata->rotor._buffer[4].velocity, rdata->rotor._buffer[5].velocity,
-    rdata->rotor._buffer[6].velocity, rdata->rotor._buffer[7].velocity,
+  /* bat */
+  if (rc_neqexts(log_time->battery, battery->ts))
+    xprint(" %g ", battery->level);
+  else
+    xprint(" - ");
 
-    rotor_data->clkrate[0], rotor_data->clkrate[1], rotor_data->clkrate[2],
-    rotor_data->clkrate[3], rotor_data->clkrate[4], rotor_data->clkrate[5],
-    rotor_data->clkrate[6], rotor_data->clkrate[7]);
+  /* imu */
+  if (rc_neqexts(log_time->imu, idata->ts))
+    xprint(
+      " %g  %g %g %g  %g %g %g  %g %g %g  %g %g %g ",
+      imu_temp,
+      idata->avel._value.wx, idata->avel._value.wy, idata->avel._value.wz,
+      imu_filter->g[0], imu_filter->g[1], imu_filter->g[2],
+      idata->acc._value.ax, idata->acc._value.ay, idata->acc._value.az,
+      imu_filter->a[0], imu_filter->a[1], imu_filter->a[2]);
+  else
+    xprint(" -  - - -  - - -  - - -  - - - ");
 
+  /* mag */
+  if (rc_neqexts(log_time->mag, mdata->ts))
+    xprint(
+      " %g %g %g  %g %g %g ",
+      mdata->att._value.qx, mdata->att._value.qy, mdata->att._value.qz,
+      imu_filter->m[0], imu_filter->m[1], imu_filter->m[2]);
+  else
+    xprint(" - - -  - - - ");
+
+  /* cmd */
+  for(i = 0; i < or_rotorcraft_max_rotors; i++) {
+    if (rc_neqexts(log_time->mwd[i], rotor_data[i].ts))
+      xprint(" %g", rotor_data[i].wd);
+    else
+      xprint(" -");
+  }
+
+  /* meas */
+  for(i = 0; i < or_rotorcraft_max_rotors; i++) {
+    if (rc_neqexts(log_time->mstate[i], rdata->rotor._buffer[i].ts))
+      xprint(" %g", rdata->rotor._buffer[i].velocity);
+    else
+      xprint(" -");
+  }
+
+  /* clk */
+  for(i = 0; i < or_rotorcraft_max_rotors; i++)
+    xprint(" %d", rotor_data[i].clkrate);
+
+  xprint("\n");
+#undef xprint
+
+  (*log)->req.aio_nbytes = p - (*log)->buffer;
   if (aio_write(&(*log)->req)) {
     warn("log");
-    mk_log_stop(log, self);
-    return rotorcraft_pause_main;
+    goto err;
   }
 
   (*log)->pending = true;
   (*log)->skipped = false;
 
+  return rotorcraft_pause_main;
+full:
+  warnx("log buffer overflow");
+err:
+  mk_log_stop(log, self);
   return rotorcraft_pause_main;
 }
 
@@ -768,7 +819,7 @@ genom_event
 mk_start_start(const rotorcraft_conn_s *conn,
                const rotorcraft_ids_servo_s *servo, uint32_t *timeout,
                uint16_t *state,
-               const or_rotorcraft_rotor_state rotor_state[8],
+               const rotorcraft_ids_rotor_data_s rotor_data[8],
                const genom_context self)
 {
   size_t i;
@@ -776,14 +827,14 @@ mk_start_start(const rotorcraft_conn_s *conn,
 
   if (!conn) return rotorcraft_e_connection(self);
   for(i = 0; i < or_rotorcraft_max_rotors; i++) {
-    if (rotor_state[i].disabled) continue;
-    if (rotor_state[i].spinning) return rotorcraft_e_started(self);
+    if (rotor_data[i].state.disabled) continue;
+    if (rotor_data[i].state.spinning) return rotorcraft_e_started(self);
   }
 
   *timeout = servo->timeout * 1e3 / rotorcraft_control_period_ms;
   *state = 0;
   for(i = 0; i < or_rotorcraft_max_rotors; i++) {
-    if (rotor_state[i].disabled) continue;
+    if (rotor_data[i].state.disabled) continue;
 
     for(m = 0; m < conn->n; m++) {
       if (i + 1 < conn->chan[m].minid) continue;
@@ -794,7 +845,7 @@ mk_start_start(const rotorcraft_conn_s *conn,
     }
 
     /* wait until motor have cleared any emergency flag */
-    if (rotor_state[i].emerg) return rotorcraft_pause_start;
+    if (rotor_data[i].state.emerg) return rotorcraft_pause_start;
   }
 
   return rotorcraft_monitor;
@@ -812,7 +863,7 @@ genom_event
 mk_start_monitor(const rotorcraft_conn_s *conn,
                  const rotorcraft_ids_sensor_time_s *sensor_time,
                  uint32_t *timeout, uint16_t *state,
-                 const or_rotorcraft_rotor_state rotor_state[8],
+                 const rotorcraft_ids_rotor_data_s rotor_data[8],
                  const genom_context self)
 {
   rotorcraft_e_rotor_failure_detail e;
@@ -825,9 +876,9 @@ mk_start_monitor(const rotorcraft_conn_s *conn,
   (*timeout)--;
   complete = true;
   for(i = 0; i < or_rotorcraft_max_rotors; i++) {
-    if (rotor_state[i].disabled) {
-      if (rotor_state[i].starting || rotor_state[i].spinning) {
-        mk_stop(conn, rotor_state, self);
+    if (rotor_data[i].state.disabled) {
+      if (rotor_data[i].state.starting || rotor_data[i].state.spinning) {
+        mk_stop(conn, rotor_data, self);
         d.id = 1 + i;
         return rotorcraft_e_rotor_not_disabled(&d, self);
       }
@@ -835,18 +886,18 @@ mk_start_monitor(const rotorcraft_conn_s *conn,
       continue;
     }
 
-    if (rotor_state[i].starting) *state |= 1 << i;
-    if (rotor_state[i].spinning) continue;
+    if (rotor_data[i].state.starting) *state |= 1 << i;
+    if (rotor_data[i].state.spinning) continue;
 
-    if ((!rotor_state[i].starting && (*state & (1 << i))) ||
-        rotor_state[i].emerg) {
-      mk_stop(conn, rotor_state, self);
+    if ((!rotor_data[i].state.starting && (*state & (1 << i))) ||
+        rotor_data[i].state.emerg) {
+      mk_stop(conn, rotor_data, self);
       e.id = 1 + i;
       return rotorcraft_e_rotor_failure(&e, self);
     }
 
     /* resend startup message every 100 periods */
-    if (!rotor_state[i].starting && *timeout % 100 == 0)
+    if (!rotor_data[i].state.starting && *timeout % 100 == 0)
       for(m = 0; m < conn->n; m++) {
         if (i + 1 < conn->chan[m].minid) continue;
         if (i + 1 > conn->chan[m].maxid) continue;
@@ -860,7 +911,7 @@ mk_start_monitor(const rotorcraft_conn_s *conn,
 
   if (!complete) {
     if (!*timeout) {
-      mk_stop(conn, rotor_state, self);
+      mk_stop(conn, rotor_data, self);
       errno = EAGAIN;
       return mk_e_sys_error("start", self);
     }
@@ -874,7 +925,7 @@ mk_start_monitor(const rotorcraft_conn_s *conn,
 
   if (rate_less80p(imu) || rate_less80p(mag) || rate_less80p(motor)) {
     if (!*timeout) {
-      mk_stop(conn, rotor_state, self);
+      mk_stop(conn, rotor_data, self);
       return rotorcraft_e_rate(&erate, self);
     }
     return rotorcraft_pause_monitor;
@@ -894,12 +945,12 @@ mk_start_monitor(const rotorcraft_conn_s *conn,
  */
 genom_event
 mk_start_stop(const rotorcraft_conn_s *conn,
-              const or_rotorcraft_rotor_state rotor_state[8],
+              const rotorcraft_ids_rotor_data_s rotor_data[8],
               const genom_context self)
 {
   genom_event e;
 
-  e = mk_stop(conn, rotor_state, self);
+  e = mk_stop(conn, rotor_data, self);
   if (e == rotorcraft_ether) return rotorcraft_ether;
 
   return rotorcraft_pause_stop;
@@ -934,7 +985,7 @@ mk_servo_start(double *scale, const genom_context self)
 genom_event
 mk_servo_main(const rotorcraft_conn_s *conn,
               const rotorcraft_ids_sensor_time_s *sensor_time,
-              rotorcraft_ids_rotor_data_s *rotor_data,
+              rotorcraft_ids_rotor_data_s rotor_data[8],
               const rotorcraft_rotor_input *rotor_input,
               const rotorcraft_ids_servo_s *servo, double *scale,
               const genom_context self)
@@ -962,7 +1013,7 @@ mk_servo_main(const rotorcraft_conn_s *conn,
 
     *scale -= 2e-3 * rotorcraft_control_period_ms / servo->ramp;
     if (*scale < 0.) {
-      mk_stop(conn, rotor_data->state, self);
+      mk_stop(conn, rotor_data, self);
       return rotorcraft_e_input(self);
     }
   }
@@ -978,7 +1029,7 @@ mk_servo_main(const rotorcraft_conn_s *conn,
     *scale -= 2e-3 * rotorcraft_control_period_ms / servo->ramp;
     if (*scale < 0.) {
       warnx("stopped because of low sensor rate");
-      mk_stop(conn, rotor_data->state, self);
+      mk_stop(conn, rotor_data, self);
       *scale = 0.;
       return rotorcraft_e_rate(&erate, self);
     }
@@ -987,12 +1038,12 @@ mk_servo_main(const rotorcraft_conn_s *conn,
 
   /* check rotors status */
   for(i = 0; i < or_rotorcraft_max_rotors; i++) {
-    if (rotor_data->state[i].disabled) continue;
-    if (rotor_data->state[i].emerg
-        || !(rotor_data->state[i].starting || rotor_data->state[i].spinning)) {
+    if (rotor_data[i].state.disabled) continue;
+    if (rotor_data[i].state.emerg
+        || !(rotor_data[i].state.starting || rotor_data[i].state.spinning)) {
       rotorcraft_e_rotor_failure_detail e;
 
-      mk_stop(conn, rotor_data->state, self);
+      mk_stop(conn, rotor_data, self);
       e.id = 1 + i;
       return rotorcraft_e_rotor_failure(&e, self);
     }
@@ -1005,7 +1056,7 @@ mk_servo_main(const rotorcraft_conn_s *conn,
 
     for(i = 0; i < desired._length; i++) {
       /* prevent ramping up until all motors are fully started */
-      if (!rotor_data->state[i].spinning) rampup = false;
+      if (!rotor_data[i].state.spinning) rampup = false;
       desired._buffer[i] *= *scale;
     }
 
@@ -1066,7 +1117,7 @@ mk_servo_stop(const rotorcraft_conn_s *conn, const genom_context self)
  */
 genom_event
 mk_stop(const rotorcraft_conn_s *conn,
-        const or_rotorcraft_rotor_state state[8],
+        const rotorcraft_ids_rotor_data_s rotor_data[8],
         const genom_context self)
 {
   (void)self;
@@ -1080,13 +1131,14 @@ mk_stop(const rotorcraft_conn_s *conn,
 
   gettimeofday(&tv, NULL);
   for(i = 0; i < or_rotorcraft_max_rotors; i++) {
-    if (state[i].disabled) continue;
+    if (rotor_data[i].state.disabled) continue;
 
     /* watchdog on motor data */
     if (tv.tv_sec + 1e-6*tv.tv_usec >
-        0.5 + state[i].ts.sec + 1e-9*state[i].ts.nsec) continue;
+        0.5 + rotor_data[i].state.ts.sec +
+        1e-9*rotor_data[i].state.ts.nsec) continue;
 
-    if (state[i].spinning) return rotorcraft_pause_start;
+    if (rotor_data[i].state.spinning) return rotorcraft_pause_start;
   }
 
   return rotorcraft_ether;
@@ -1122,7 +1174,7 @@ rc_log_header(const rotorcraft_ids_imu_calibration_s *imu_calibration,
   rc_get_imu_filter(imu_filter, rate, gfc, afc, mfc, self);
   if (rc_log_imu_filter(gfc, afc, mfc, log, self)) goto err;
 
-  s = dprintf((*log)->fd, rotorcraft_log_header "\n");
+  s = dprintf((*log)->fd, rc_log_header_fmt "\n");
   if (s < 0) goto err;
 
 

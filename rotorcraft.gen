@@ -76,11 +76,14 @@ component rotorcraft {
     } sensor_time;
 
     struct publish_time_s {
-      or::time::ts imu, mag, motor[or_rotorcraft::max_rotors];
-    } publish_time;
+      or::time::ts imu, mag, battery;
+      or::time::ts mstate[or_rotorcraft::max_rotors];
+      or::time::ts mwd[or_rotorcraft::max_rotors];
+    } publish_time, log_time;
 
     /* battery data */
     struct battery_s {
+      or::time::ts ts;
       double min, max;
       double level;
     } battery;
@@ -109,10 +112,11 @@ component rotorcraft {
 
     /* rotors data */
     struct rotor_data_s {
-      or_rotorcraft::rotor_state state[or_rotorcraft::max_rotors];
-      double wd[or_rotorcraft::max_rotors];
-      octet clkrate[or_rotorcraft::max_rotors];
-    } rotor_data;
+      or_rotorcraft::rotor_state state;
+      or::time::ts ts;
+      double wd;
+      octet clkrate;
+    } rotor_data[or_rotorcraft::max_rotors];
 
     /* servo parameters */
     struct servo_s {
@@ -276,7 +280,8 @@ component rotorcraft {
       yield log;
     codel<log> rc_main_log(in battery, in imu_temp, in rotor_data,
                            in sensor_time.measured_rate, in rotor_measure,
-                           in imu_filter, inout log)
+                           in imu, in mag, in imu_filter, inout log_time,
+                           inout log)
       yield pause::main;
 
     codel<stop> mk_main_stop(inout log)
@@ -291,7 +296,8 @@ component rotorcraft {
       yield nodata, recv;
     codel<nodata> mk_comm_nodata(inout conn,
                                  inout imu_filter, inout sensor_time,
-                                 out imu, out mag, out battery)
+                                 out imu, out mag, out rotor_data,
+                                 out battery, out imu_temp)
       yield poll;
     codel<recv> mk_comm_recv(inout conn, in imu_calibration, inout imu_filter,
                              inout sensor_time,
@@ -600,13 +606,13 @@ component rotorcraft {
     local unsigned long timeout;
 
     codel<start> mk_start_start(in conn, in servo, out timeout, out state,
-                                in rotor_data.state::rotor_state)
+                                in rotor_data)
       yield pause::start, monitor;
     codel<monitor> mk_start_monitor(in conn, in sensor_time,
                                     inout timeout, inout state,
-                                    in rotor_data.state::rotor_state)
+                                    in rotor_data)
       yield pause::monitor, ether;
-    codel<stop> mk_start_stop(in conn, in rotor_data.state::rotor_state)
+    codel<stop> mk_start_stop(in conn, in rotor_data)
       yield pause::stop, ether;
 
     interrupt start;
@@ -637,7 +643,7 @@ component rotorcraft {
        in or_rotorcraft::rotor_control desired =: "Propeller velocities") {
     doc		"Set the given propeller velocity, once";
 
-    validate mk_validate_input(in rotor_data.state, inout desired);
+    validate mk_validate_input(in rotor_data, inout desired);
     codel mk_set_velocity(in conn, inout rotor_data, in desired);
 
     interrupt servo;
@@ -648,7 +654,7 @@ component rotorcraft {
        in or_rotorcraft::rotor_control desired =: "Propeller throttles") {
     doc		"Set the given propeller voltage";
 
-    validate mk_validate_input(in rotor_data.state, inout desired);
+    validate mk_validate_input(in rotor_data, inout desired);
     codel mk_set_throttle(in conn, inout rotor_data, in desired);
 
     interrupt servo;
@@ -659,7 +665,7 @@ component rotorcraft {
     doc		"Stop all propellers";
     task	main;
 
-    codel<start> mk_stop(in conn, in rotor_data.state)
+    codel<start> mk_stop(in conn, in rotor_data)
       yield pause::start, ether;
 
     interrupt servo, start;

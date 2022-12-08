@@ -119,7 +119,7 @@ mk_set_battery_limits(double min, double max,
  * Throws rotorcraft_e_connection, rotorcraft_e_rotor_failure.
  */
 genom_event
-mk_validate_input(const or_rotorcraft_rotor_state state[8],
+mk_validate_input(const rotorcraft_ids_rotor_data_s rotor_data[8],
                   or_rotorcraft_rotor_control *desired,
                   const genom_context self)
 {
@@ -128,8 +128,8 @@ mk_validate_input(const or_rotorcraft_rotor_state state[8],
 
   /* check rotors status */
   for(i = 0; i < or_rotorcraft_max_rotors; i++) {
-    if (state[i].disabled) continue;
-    if (state[i].emerg) {
+    if (rotor_data[i].state.disabled) continue;
+    if (rotor_data[i].state.emerg) {
       e.id = 1 + i;
       return rotorcraft_e_rotor_failure(&e, self);
     }
@@ -399,7 +399,7 @@ rc_log_imu_filter(const double gfc[3], const double afc[3],
  */
 genom_event
 mk_disable_motor(uint16_t motor, const rotorcraft_conn_s *conn,
-                 or_rotorcraft_rotor_state state[8],
+                 rotorcraft_ids_rotor_data_s rotor_data[8],
                  const genom_context self)
 {
   struct timeval tv;
@@ -409,7 +409,7 @@ mk_disable_motor(uint16_t motor, const rotorcraft_conn_s *conn,
     return rotorcraft_e_range(self);
 
   gettimeofday(&tv, NULL);
-  state[motor - 1] = (or_rotorcraft_rotor_state){
+  rotor_data[motor - 1].state = (or_rotorcraft_rotor_state){
     .ts = { .sec = tv.tv_sec, .nsec = tv.tv_usec * 1000 },
     .emerg = false, .spinning = false, .starting = false, .disabled = true,
     .velocity = nan(""), .throttle = nan(""), .consumption = nan(""),
@@ -435,7 +435,7 @@ mk_disable_motor(uint16_t motor, const rotorcraft_conn_s *conn,
  */
 genom_event
 mk_enable_motor(uint16_t motor, const rotorcraft_conn_s *conn,
-                or_rotorcraft_rotor_state state[8],
+                rotorcraft_ids_rotor_data_s rotor_data[8],
                 const genom_context self)
 {
   struct timeval tv;
@@ -445,15 +445,15 @@ mk_enable_motor(uint16_t motor, const rotorcraft_conn_s *conn,
     return rotorcraft_e_range(self);
 
   gettimeofday(&tv, NULL);
-  state[motor - 1] = (or_rotorcraft_rotor_state){
+  rotor_data[motor - 1].state = (or_rotorcraft_rotor_state){
     .ts = { .sec = tv.tv_sec, .nsec = tv.tv_usec * 1000 },
     .emerg = false, .spinning = false, .starting = false, .disabled = false
   };
 
   /* also restart motor if spinning */
   for(m = 0; m < or_rotorcraft_max_rotors; m++) {
-    if (state[m].disabled) continue;
-    if (!state[m].spinning) continue;
+    if (rotor_data[m].state.disabled) continue;
+    if (!rotor_data[m].state.spinning) continue;
 
     for(i = 0; i < conn->n; i++)
       if (motor >= conn->chan[i].minid && motor <= conn->chan[i].maxid) {
@@ -516,25 +516,29 @@ mk_set_pid(const rotorcraft_conn_s *conn, uint16_t motor, double Kp,
  */
 genom_event
 mk_set_velocity(const rotorcraft_conn_s *conn,
-                rotorcraft_ids_rotor_data_s *rotor_data,
+                rotorcraft_ids_rotor_data_s rotor_data[8],
                 const or_rotorcraft_rotor_control *desired,
                 const genom_context self)
 {
   int16_t p[or_rotorcraft_max_rotors];
+  struct timeval tv;
   uint32_t i, l, n;
   (void)self;
 
   l = desired->_length;
   if (l == 0) return genom_ok;
+  gettimeofday(&tv, NULL);
 
   /* rotational period */
   for(i = 0; i < l; i++) {
-    rotor_data->wd[i] =
-      rotor_data->state[i].disabled ? 0. : desired->_buffer[i];
-    if (isnan(rotor_data->wd[i])) rotor_data->wd[i] = 0.;
+    rotor_data[i].ts.sec = tv.tv_sec;
+    rotor_data[i].ts.nsec = tv.tv_usec * 1000;
+    rotor_data[i].wd =
+      rotor_data[i].state.disabled ? 0. : desired->_buffer[i];
+    if (isnan(rotor_data[i].wd)) rotor_data[i].wd = 0.;
 
-    p[i] = (fabs(rotor_data->wd[i]) < 1000000./65535.) ?
-      copysign(32767, rotor_data->wd[i]) : 1000000/2/rotor_data->wd[i];
+    p[i] = (fabs(rotor_data[i].wd) < 1000000./65535.) ?
+      copysign(32767, rotor_data[i].wd) : 1000000/2/rotor_data[i].wd;
   }
 
   /* send */
@@ -561,25 +565,29 @@ mk_set_velocity(const rotorcraft_conn_s *conn,
  */
 genom_event
 mk_set_throttle(const rotorcraft_conn_s *conn,
-                rotorcraft_ids_rotor_data_s *rotor_data,
+                rotorcraft_ids_rotor_data_s rotor_data[8],
                 const or_rotorcraft_rotor_control *desired,
                 const genom_context self)
 {
   int16_t p[or_rotorcraft_max_rotors];
+  struct timeval tv;
   uint32_t i, l, n;
   (void)self;
 
   l = desired->_length;
   if (l == 0) return genom_ok;
+  gettimeofday(&tv, NULL);
 
   /* convert to -1023..1023 */
   for(i = 0; i < l; i++) {
-    rotor_data->wd[i] = 0.;
+    rotor_data[i].ts.sec = tv.tv_sec;
+    rotor_data[i].ts.nsec = tv.tv_usec * 1000;
+    rotor_data[i].wd = 0.;
     if (isnan(desired->_buffer[i]))
       p[i] = 0.;
     else
       p[i] =
-        rotor_data->state[i].disabled ? 0. : desired->_buffer[i] * 1023./100.;
+        rotor_data[i].state.disabled ? 0. : desired->_buffer[i] * 1023./100.;
   }
 
   /* send */
