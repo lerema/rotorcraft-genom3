@@ -374,7 +374,7 @@ mk_comm_recv_msg(struct mk_channel_s *chan,
         id--;
         if (seq == sensor_time->motor[id].seq) break;
 
-        if (!rotor_data[id].state.ts.sec && rotor_data[id].state.disabled)
+        if (rotor_data[id].autoconf && rotor_data[id].state.disabled)
           rotor_data[id].state.disabled = 0;
 
         mk_get_ts(

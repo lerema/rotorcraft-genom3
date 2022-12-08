@@ -415,6 +415,7 @@ mk_disable_motor(uint16_t motor, const rotorcraft_conn_s *conn,
     .velocity = nan(""), .throttle = nan(""), .consumption = nan(""),
     .energy_level = nan("")
   };
+  rotor_data[motor - 1].autoconf = false;
 
   /* also stop motor */
   for(i = 0; i < conn->n; i++)
@@ -449,6 +450,7 @@ mk_enable_motor(uint16_t motor, const rotorcraft_conn_s *conn,
     .ts = { .sec = tv.tv_sec, .nsec = tv.tv_usec * 1000 },
     .emerg = false, .spinning = false, .starting = false, .disabled = false
   };
+  rotor_data[motor - 1].autoconf = false;
 
   /* also restart motor if spinning */
   for(m = 0; m < or_rotorcraft_max_rotors; m++) {

@@ -116,6 +116,7 @@ component rotorcraft {
       or::time::ts ts;
       double wd;
       octet clkrate;
+      boolean autoconf;
     } rotor_data[or_rotorcraft::max_rotors];
 
     /* servo parameters */
@@ -394,13 +395,13 @@ component rotorcraft {
   function disable_motor(in unsigned short motor) {
     doc		"Disable checking a motor status when it is disconnected";
 
-    codel mk_disable_motor(in motor, in conn, out rotor_data.state);
+    codel mk_disable_motor(in motor, in conn, out rotor_data);
   };
 
   function enable_motor(in unsigned short motor) {
     doc		"Disable checking a motor status when it is disconnected";
 
-    codel mk_enable_motor(in motor, in conn, out rotor_data.state);
+    codel mk_enable_motor(in motor, in conn, out rotor_data);
   };
 
   function set_pid(in unsigned short motor = 1 :"Motor id",

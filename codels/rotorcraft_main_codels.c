@@ -119,7 +119,8 @@ mk_main_init(rotorcraft_ids *ids, const rotorcraft_imu *imu,
         .energy_level = nan("")
       },
       .wd = 0.,
-      .clkrate = 0
+      .clkrate = 0,
+      .autoconf = true
     };
   }
 
