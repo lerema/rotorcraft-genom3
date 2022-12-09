@@ -91,7 +91,8 @@ mk_set_sensor_rate(const rotorcraft_ids_sensor_time_s_rate_s *rate,
   }
 
   /* update rate */
-  sensor_time->rate = *rate;
+  if (sensor_time)
+    sensor_time->rate = *rate;
 
   return genom_ok;
 }
