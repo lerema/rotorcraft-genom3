@@ -238,7 +238,7 @@ Get hardware sensor data publishing rate, see <<set_sensor_rate>>.
 '''
 
 [[set_sensor_rate]]
-=== set_sensor_rate (attribute)
+=== set_sensor_rate (function)
 
 [role="small", width="50%", float="right", cols="1"]
 |===

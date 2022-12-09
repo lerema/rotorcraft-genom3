@@ -30,9 +30,9 @@
 #include "codels.h"
 
 
-/* --- Attribute set_sensor_rate ---------------------------------------- */
+/* --- Function set_sensor_rate ----------------------------------------- */
 
-/** Validation codel mk_set_sensor_rate of attribute set_sensor_rate.
+/** Validation codel mk_set_sensor_rate of function set_sensor_rate.
  *
  * Returns genom_ok.
  * Throws .
@@ -89,6 +89,9 @@ mk_set_sensor_rate(const rotorcraft_ids_sensor_time_s_rate_s *rate,
                       gfc, afc, mfc, self);
     rc_set_imu_filter(gfc, afc, mfc, rate /* new rate */, imu_filter, self);
   }
+
+  /* update rate */
+  sensor_time->rate = *rate;
 
   return genom_ok;
 }
@@ -184,6 +187,34 @@ rc_log_open(const char path[64], uint32_t decimation,
   (*log)->decimation = decimation < 1 ? 1 : decimation;
   (*log)->missed = 0;
   (*log)->total = 0;
+
+  return genom_ok;
+}
+
+
+/* --- Function set_sensor_rate ----------------------------------------- */
+
+/** Codel rc_log_sensor_rate of function set_sensor_rate.
+ *
+ * Returns genom_ok.
+ */
+genom_event
+rc_log_sensor_rate(const rotorcraft_ids_sensor_time_s_rate_s *rate,
+                   rotorcraft_log_s **log, const genom_context self)
+{
+  int s;
+
+  if ((*log)->fd < 0) return genom_ok;
+
+  s = dprintf(
+    (*log)->fd,
+    "# sensor rate\n"
+    "# { imu %g mag %g motor %g battery %g }\n",
+    rate->imu, rate->mag, rate->motor, rate->battery);
+  if (s < 0) {
+    warn("log");
+    mk_log_stop(log, self);
+  }
 
   return genom_ok;
 }

@@ -1175,6 +1175,8 @@ rc_log_header(const rotorcraft_ids_imu_calibration_s *imu_calibration,
   rc_get_imu_filter(imu_filter, rate, gfc, afc, mfc, self);
   if (rc_log_imu_filter(gfc, afc, mfc, log, self)) goto err;
 
+  if (rc_log_sensor_rate(rate, log, self)) goto err;
+
   s = dprintf((*log)->fd, rc_log_header_fmt "\n");
   if (s < 0) goto err;
 
