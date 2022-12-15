@@ -15,10 +15,7 @@
 #					Anthony Mallet on Fri Feb 13 2015
 #
 
-lib_LTLIBRARIES =
-
-# rotorcraft codels library
-lib_LTLIBRARIES += librotorcraft_codels.la
+lib_LTLIBRARIES = librotorcraft_codels.la
 
 librotorcraft_codels_la_SOURCES  =	rotorcraft_c_types.h
 librotorcraft_codels_la_SOURCES +=	rotorcraft_codels.c
@@ -37,7 +34,7 @@ librotorcraft_codels_la_LDFLAGS  =	-release $(PACKAGE_VERSION)
 librotorcraft_codels_la_CPPFLAGS+=	$(libudev_CFLAGS)
 librotorcraft_codels_la_LIBADD  +=	$(libudev_LIBS)
 
-# idl mappings
+# idl  mappings
 BUILT_SOURCES=	rotorcraft_c_types.h
 CLEANFILES=	${BUILT_SOURCES}
 rotorcraft_c_types.h: ${top_srcdir}/rotorcraft.gen

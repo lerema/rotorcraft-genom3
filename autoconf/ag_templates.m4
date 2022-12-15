@@ -18,9 +18,7 @@ AC_DEFUN([AG_OPT_TEMPLATES],
             a template is also supported]),
         [ag_templates="$withval"])
 
-    if test "x$ag_templates" = xno; then
-      ag_templates=
-    elif test -n "$ag_templates"; then
+    if test -n "$ag_templates"; then
         # user may want to pass options to templates
         AC_DISABLE_OPTION_CHECKING
 

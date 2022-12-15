@@ -41,7 +41,7 @@ distclean-local:
 merge: merge-interactive
 merge-%:
 	cd ${top_srcdir} && ${GENOM3}  \
-	  skeleton -l 'c' -m $* rotorcraft.gen
+		skeleton -l 'c' -m $* rotorcraft.gen
 
 # documentation
 dist_doc_DATA=	README.html README.adoc
