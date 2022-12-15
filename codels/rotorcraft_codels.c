@@ -193,6 +193,23 @@ rc_log_open(const char path[64], uint32_t decimation,
 }
 
 
+/* --- Activity monitor_battery ----------------------------------------- */
+
+/** Validation codel controlPercentage of activity monitor_battery.
+ *
+ * Returns genom_ok.
+ * Throws rotorcraft_e_bad_battery_percentage.
+ */
+genom_event
+controlPercentage(double threshold_percentage,
+                  const genom_context self)
+{
+  if (threshold_percentage < 0. && threshold_percentage >= 100.)
+    return rotorcraft_e_bad_battery_percentage(self);
+
+  return genom_ok;
+}
+
 /* --- Function set_sensor_rate ----------------------------------------- */
 
 /** Codel rc_log_sensor_rate of function set_sensor_rate.

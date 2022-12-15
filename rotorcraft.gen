@@ -38,6 +38,7 @@ component rotorcraft {
   exception e_rotor_stopped { unsigned short id; };
   exception e_started, e_connection, e_range, e_input;
   exception e_rate { string<8> what; };
+  exception e_bad_battery_percentage;
 
   native conn_s;
   native log_s;
@@ -86,8 +87,10 @@ component rotorcraft {
     struct battery_s {
       or::time::ts ts;
       double min, max;
-      double level;
+      double level; //volts
+      octet status; // Get the status of the battery
     } battery;
+    boolean simulate_battery;
 
     /* imu calibration & filtering */
     struct calibration_param_s {
@@ -304,7 +307,7 @@ component rotorcraft {
       yield poll;
     codel<recv> mk_comm_recv(inout conn, in imu_calibration, inout imu_filter,
                              inout sensor_time,
-                             out imu, out mag, out rotor_data, out battery,
+                             out imu, out mag, out rotor_data, inout battery, in simulate_battery,
                              out imu_temp)
       yield poll, recv;
 
@@ -724,4 +727,8 @@ component rotorcraft {
 
       throw e_sys;
   };
-};
+
+  attribute should_simulate_battery(in simulate_battery = FALSE : "Simulate battery (TRUE/FALSE). Default is FALSE.") {
+    doc "Simulate battery";
+  };
+  };

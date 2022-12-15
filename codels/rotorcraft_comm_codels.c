@@ -77,7 +77,7 @@ static void	mk_comm_recv_msg(struct mk_channel_s *chan,
                         rotorcraft_ids_sensor_time_s *sensor_time,
                         const rotorcraft_imu *imu, const rotorcraft_mag *mag,
                         rotorcraft_ids_rotor_data_s *rotor_data,
-                        rotorcraft_ids_battery_s *battery, double *imu_temp,
+                        rotorcraft_ids_battery_s *battery, bool simulate_battery, double *imu_temp,
                         const genom_context self);
 genom_event	mk_connect_chan(const char serial[64], uint32_t baud,
                         struct mk_channel_s *chan, const genom_context self);
@@ -217,8 +217,8 @@ mk_comm_recv(rotorcraft_conn_s **conn,
              rotorcraft_ids_sensor_time_s *sensor_time,
              const rotorcraft_imu *imu, const rotorcraft_mag *mag,
              rotorcraft_ids_rotor_data_s rotor_data[8],
-             rotorcraft_ids_battery_s *battery, double *imu_temp,
-             const genom_context self)
+             rotorcraft_ids_battery_s *battery, bool simulate_battery,
+             double *imu_temp, const genom_context self)
 {
   int more;
   uint32_t i;
@@ -228,7 +228,7 @@ mk_comm_recv(rotorcraft_conn_s **conn,
       more = 1;
       mk_comm_recv_msg(&(*conn)->chan[i],
                        imu_calibration, imu_filter, sensor_time,
-                       imu, mag, rotor_data, battery, imu_temp,
+                       imu, mag, rotor_data, battery, simulate_battery, imu_temp,
                        self);
     }
 
@@ -242,7 +242,7 @@ mk_comm_recv_msg(struct mk_channel_s *chan,
                  rotorcraft_ids_sensor_time_s *sensor_time,
                  const rotorcraft_imu *imu, const rotorcraft_mag *mag,
                  rotorcraft_ids_rotor_data_s *rotor_data,
-                 rotorcraft_ids_battery_s *battery, double *imu_temp,
+                 rotorcraft_ids_battery_s *battery, bool simulate_battery, double *imu_temp,
                  const genom_context self)
 {
   struct timeval tv;
@@ -414,7 +414,29 @@ mk_comm_recv_msg(struct mk_channel_s *chan,
 
         u16 = ((uint16_t)(*msg++) << 8);
         u16 |= ((uint16_t)(*msg++) << 0);
-        battery->level = u16/1000.;
+
+        if (simulate_battery) {
+        if (battery->level == battery->max){
+          battery->level = battery->max;
+          battery->status = 0; //FULL
+        }
+        else if (battery->level > battery->min && battery->level <= battery->max)
+        {
+          battery->status = 1; //DISCHARGING;
+
+          //SIMULATED BATTERY LEVEL CHANGE
+          battery->level -= 0.005; // TODO: add simulation of battery consumption
+        }
+        else if (battery->min >= battery->level)
+        {
+          battery->level = battery->min;
+          battery->status = 255; //CRITICAL
+        }
+        } else {
+          // Real battery level
+          battery->level = u16 / 1e3;
+          battery->status = 1; //FULL
+        }
 
         battery->ts.sec = tv.tv_sec;
         battery->ts.nsec = tv.tv_usec * 1000;

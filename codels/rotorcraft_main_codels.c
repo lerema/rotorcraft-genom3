@@ -183,7 +183,7 @@ mk_main_perm(const rotorcraft_conn_s *conn,
              rotorcraft_ids_sensor_time_s *sensor_time,
              rotorcraft_ids_publish_time_s *publish_time,
              bool *imu_calibration_updated,
-             const rotorcraft_rotor_measure *rotor_measure,
+             const or_rotorcraft_rotor_measure *rotor_measure,
              const rotorcraft_imu *imu, const rotorcraft_mag *mag,
              const genom_context self)
 {
@@ -314,7 +314,7 @@ genom_event
 rc_main_log(const rotorcraft_ids_battery_s *battery, double imu_temp,
             const rotorcraft_ids_rotor_data_s rotor_data[8],
             const rotorcraft_ids_sensor_time_s_rate_s *measured_rate,
-            const rotorcraft_rotor_measure *rotor_measure,
+            const or_rotorcraft_rotor_measure *rotor_measure,
             const rotorcraft_imu *imu, const rotorcraft_mag *mag,
             const rotorcraft_ids_imu_filter_s *imu_filter,
             rotorcraft_ids_publish_time_s *log_time,
@@ -997,7 +997,7 @@ genom_event
 mk_servo_main(const rotorcraft_conn_s *conn,
               const rotorcraft_ids_sensor_time_s *sensor_time,
               rotorcraft_ids_rotor_data_s rotor_data[8],
-              const rotorcraft_rotor_input *rotor_input,
+              const or_rotorcraft_rotor_input *rotor_input,
               const rotorcraft_ids_servo_s *servo, double *scale,
               const genom_context self)
 {

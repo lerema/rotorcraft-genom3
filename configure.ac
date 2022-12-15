@@ -62,7 +62,7 @@ fi
 
 dnl --with-templates option
 AG_OPT_TEMPLATES([$GENOM3 ],
-    [$srcdir/rotorcraft.gen])
+    [rotorcraft.gen])
 
 
 # check for TIOCGSERIAL, TIOCSSERIAL

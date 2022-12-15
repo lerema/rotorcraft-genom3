@@ -280,6 +280,7 @@ a|.Outputs
  ** `double` `min` Minimum acceptable battery voltage
  ** `double` `max` Full battery voltage
  ** `double` `level` Current battery voltage
+ ** `octet` `status`
 
 |===
 
@@ -1120,6 +1121,21 @@ a|.Context
 |===
 
 Compute gyroscopes, accelerometers and magnetomers average.
+
+'''
+
+[[should_simulate_battery]]
+=== should_simulate_battery (attribute)
+
+[role="small", width="50%", float="right", cols="1"]
+|===
+a|.Inputs
+[disc]
+ * `boolean` `simulate_battery` (default `"0"`) Simulate battery (TRUE/FALSE). Default is FALSE.
+
+|===
+
+Simulate battery
 
 '''
 
