@@ -908,6 +908,9 @@ a|.Throws
  * `exception ::rotorcraft::e_rotor_failure`
  ** `unsigned short` `id`
 
+ * `exception ::rotorcraft::e_rotor_stopped`
+ ** `unsigned short` `id`
+
  * `exception ::rotorcraft::e_rate`
  ** `string<8>` `what`
 
@@ -935,6 +938,9 @@ a|.Throws
  * `exception ::rotorcraft::e_connection`
 
  * `exception ::rotorcraft::e_rotor_failure`
+ ** `unsigned short` `id`
+
+ * `exception ::rotorcraft::e_rotor_stopped`
  ** `unsigned short` `id`
 
  * `exception ::rotorcraft::e_rate`

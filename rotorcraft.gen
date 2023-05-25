@@ -619,8 +619,8 @@ component rotorcraft {
       yield pause::stop, ether;
 
     interrupt start;
-    throw e_connection, e_started, e_sys, e_rotor_failure, e_rate,
-      e_rotor_not_disabled;
+    throw e_connection, e_started, e_sys, e_rotor_failure, e_rotor_stopped,
+      e_rate, e_rotor_not_disabled;
   };
 
   activity servo() {
@@ -639,7 +639,7 @@ component rotorcraft {
       yield ether;
 
     interrupt servo;
-    throw e_connection, e_rotor_failure, e_rate, e_input;
+    throw e_connection, e_rotor_failure, e_rotor_stopped, e_rate, e_input;
   };
 
   function set_velocity(

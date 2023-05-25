@@ -814,7 +814,8 @@ mk_set_zero_velocity(rotorcraft_accum accum[3],
  * Yields to rotorcraft_pause_start, rotorcraft_monitor.
  * Throws rotorcraft_e_connection, rotorcraft_e_started,
  *        rotorcraft_e_sys, rotorcraft_e_rotor_failure,
- *        rotorcraft_e_rate, rotorcraft_e_rotor_not_disabled.
+ *        rotorcraft_e_rotor_stopped, rotorcraft_e_rate,
+ *        rotorcraft_e_rotor_not_disabled.
  */
 genom_event
 mk_start_start(const rotorcraft_conn_s *conn,
@@ -858,7 +859,8 @@ mk_start_start(const rotorcraft_conn_s *conn,
  * Yields to rotorcraft_pause_monitor, rotorcraft_ether.
  * Throws rotorcraft_e_connection, rotorcraft_e_started,
  *        rotorcraft_e_sys, rotorcraft_e_rotor_failure,
- *        rotorcraft_e_rate, rotorcraft_e_rotor_not_disabled.
+ *        rotorcraft_e_rotor_stopped, rotorcraft_e_rate,
+ *        rotorcraft_e_rotor_not_disabled.
  */
 genom_event
 mk_start_monitor(const rotorcraft_conn_s *conn,
@@ -947,7 +949,8 @@ mk_start_monitor(const rotorcraft_conn_s *conn,
  * Yields to rotorcraft_pause_stop, rotorcraft_ether.
  * Throws rotorcraft_e_connection, rotorcraft_e_started,
  *        rotorcraft_e_sys, rotorcraft_e_rotor_failure,
- *        rotorcraft_e_rate, rotorcraft_e_rotor_not_disabled.
+ *        rotorcraft_e_rotor_stopped, rotorcraft_e_rate,
+ *        rotorcraft_e_rotor_not_disabled.
  */
 genom_event
 mk_start_stop(const rotorcraft_conn_s *conn,
@@ -970,7 +973,8 @@ mk_start_stop(const rotorcraft_conn_s *conn,
  * Triggered by rotorcraft_start.
  * Yields to rotorcraft_main.
  * Throws rotorcraft_e_connection, rotorcraft_e_rotor_failure,
- *        rotorcraft_e_rate, rotorcraft_e_input.
+ *        rotorcraft_e_rotor_stopped, rotorcraft_e_rate,
+ *        rotorcraft_e_input.
  */
 genom_event
 mk_servo_start(double *scale, const genom_context self)
@@ -986,7 +990,8 @@ mk_servo_start(double *scale, const genom_context self)
  * Triggered by rotorcraft_main.
  * Yields to rotorcraft_pause_main, rotorcraft_stop.
  * Throws rotorcraft_e_connection, rotorcraft_e_rotor_failure,
- *        rotorcraft_e_rate, rotorcraft_e_input.
+ *        rotorcraft_e_rotor_stopped, rotorcraft_e_rate,
+ *        rotorcraft_e_input.
  */
 genom_event
 mk_servo_main(const rotorcraft_conn_s *conn,
@@ -1101,7 +1106,8 @@ mk_servo_main(const rotorcraft_conn_s *conn,
  * Triggered by rotorcraft_stop.
  * Yields to rotorcraft_ether.
  * Throws rotorcraft_e_connection, rotorcraft_e_rotor_failure,
- *        rotorcraft_e_rate, rotorcraft_e_input.
+ *        rotorcraft_e_rotor_stopped, rotorcraft_e_rate,
+ *        rotorcraft_e_input.
  */
 genom_event
 mk_servo_stop(const rotorcraft_conn_s *conn, const genom_context self)
