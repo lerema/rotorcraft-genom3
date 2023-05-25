@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2022 LAAS/CNRS
+ * Copyright (c) 2015-2023 LAAS/CNRS
  * All rights reserved.
  *
  * Redistribution and use  in source  and binary  forms,  with or without
@@ -867,6 +867,7 @@ mk_start_monitor(const rotorcraft_conn_s *conn,
                  const rotorcraft_ids_rotor_data_s rotor_data[8],
                  const genom_context self)
 {
+  rotorcraft_e_rotor_stopped_detail s;
   rotorcraft_e_rotor_failure_detail e;
   rotorcraft_e_rotor_not_disabled_detail d;
   rotorcraft_e_rate_detail erate;
@@ -890,11 +891,15 @@ mk_start_monitor(const rotorcraft_conn_s *conn,
     if (rotor_data[i].state.starting) *state |= 1 << i;
     if (rotor_data[i].state.spinning) continue;
 
-    if ((!rotor_data[i].state.starting && (*state & (1 << i))) ||
-        rotor_data[i].state.emerg) {
+    if (rotor_data[i].state.emerg) {
       mk_stop(conn, rotor_data, self);
       e.id = 1 + i;
       return rotorcraft_e_rotor_failure(&e, self);
+    }
+    if ((!rotor_data[i].state.starting && (*state & (1 << i)))) {
+      mk_stop(conn, rotor_data, self);
+      s.id = 1 + i;
+      return rotorcraft_e_rotor_stopped(&s, self);
     }
 
     /* resend startup message every 100 periods */
@@ -1040,13 +1045,19 @@ mk_servo_main(const rotorcraft_conn_s *conn,
   /* check rotors status */
   for(i = 0; i < or_rotorcraft_max_rotors; i++) {
     if (rotor_data[i].state.disabled) continue;
-    if (rotor_data[i].state.emerg
-        || !(rotor_data[i].state.starting || rotor_data[i].state.spinning)) {
+    if (rotor_data[i].state.emerg) {
       rotorcraft_e_rotor_failure_detail e;
 
       mk_stop(conn, rotor_data, self);
       e.id = 1 + i;
       return rotorcraft_e_rotor_failure(&e, self);
+    }
+    if (!(rotor_data[i].state.starting || rotor_data[i].state.spinning)) {
+      rotorcraft_e_rotor_stopped_detail s;
+
+      mk_stop(conn, rotor_data, self);
+      s.id = 1 + i;
+      return rotorcraft_e_rotor_stopped(&s, self);
     }
   }
 
