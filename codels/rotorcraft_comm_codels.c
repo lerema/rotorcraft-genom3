@@ -119,10 +119,8 @@ mk_comm_poll(const rotorcraft_conn_s *conn, const genom_context self)
   int s;
 
   s = mk_wait_msg(conn);
-  if (s < 0) {
+  if (s < 0)
     if (errno != EINTR) return mk_e_sys_error(NULL, self);
-    return rotorcraft_nodata;
-  }
   else if (s == 0) return rotorcraft_nodata;
 
   return rotorcraft_recv;
