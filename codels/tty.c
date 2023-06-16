@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2022 LAAS/CNRS
+ * Copyright (c) 2015-2023 LAAS/CNRS
  * All rights reserved.
  *
  * Redistribution and use  in source  and binary  forms,  with or without
@@ -15,6 +15,7 @@
  *                                      Anthony Mallet on Mon Feb 16 2015
  */
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/uio.h>
 
@@ -266,10 +267,12 @@ done:
 /* --- mk_wait_msg --------------------------------------------------------- */
 
 int
-mk_wait_msg(const rotorcraft_conn_s *conn)
+mk_wait_msg(const rotorcraft_conn_s *conn, const struct timeval *deadline)
 {
   struct pollfd pfd[conn->n];
+  struct timeval tv;
   uint32_t i;
+  int delay;
   int s;
 
   for(i = 0; i < conn->n; i++) {
@@ -277,7 +280,12 @@ mk_wait_msg(const rotorcraft_conn_s *conn)
     pfd[i].events = POLLIN;
   }
 
-  s = poll(pfd, conn->n, 500/*ms*/);
+  gettimeofday(&tv, NULL);
+  delay = (deadline->tv_sec - tv.tv_sec) * 1000 +
+          (deadline->tv_usec - tv.tv_usec) / 1000;
+  if (delay < 0) delay = 0;
+
+  s = poll(pfd, conn->n, delay);
 
   for(i = 0; i < conn->n; i++)
     if (pfd[i].revents & POLLHUP) {

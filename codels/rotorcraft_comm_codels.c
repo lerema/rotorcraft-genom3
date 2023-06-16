@@ -116,13 +116,19 @@ mk_comm_start(const genom_context self)
 genom_event
 mk_comm_poll(const rotorcraft_conn_s *conn, const genom_context self)
 {
+  struct timeval deadline;
   int s;
 
-  s = mk_wait_msg(conn);
-  if (s < 0)
-    if (errno != EINTR) return mk_e_sys_error(NULL, self);
-  else if (s == 0) return rotorcraft_nodata;
+  /* 500ms timeout */
+  gettimeofday(&deadline, NULL);
+  deadline.tv_usec += 500000; /* exceeding 1e6 is not an issue */
 
+  do
+    s = mk_wait_msg(conn, &deadline);
+  while (s < 0 && errno == EINTR);
+
+  if (s < 0) return mk_e_sys_error(NULL, self);
+  if (s == 0) return rotorcraft_nodata;
   return rotorcraft_recv;
 }
 
@@ -698,6 +704,7 @@ mk_connect_chan(const char serial[64], uint32_t baud, struct mk_channel_s *chan,
                 const genom_context self)
 {
   rotorcraft_conn_s conn = { .chan = chan, .n = 1 };
+  struct timeval deadline;
   struct stat sb;
   double rev;
   size_t c;
@@ -721,11 +728,18 @@ mk_connect_chan(const char serial[64], uint32_t baud, struct mk_channel_s *chan,
       if (mk_send_msg(chan, "?")) /* ask for id */
         return mk_e_sys_error(serial, self);
 
-      s = mk_wait_msg(&conn);
-      if (s < 0 && errno != EINTR) return mk_e_sys_error(serial, self);
+      /* 500ms timeout */
+      gettimeofday(&deadline, NULL);
+      deadline.tv_usec += 500000; /* exceeding 1e6 is not an issue */
+      do {
+        s = mk_wait_msg(&conn, &deadline);
+      } while(s < 0 && errno == EINTR);
+
+      if (s < 0) return mk_e_sys_error(serial, self);
       if (s > 0) break;
     } while(c++ < 3);
     if (c > 3) {
+      warnx("no response from %s", serial);
       errno = ETIMEDOUT;
       return mk_e_sys_error(NULL, self);
     }

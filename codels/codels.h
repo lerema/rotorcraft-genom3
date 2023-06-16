@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2019,2021-2022 LAAS/CNRS
+ * Copyright (c) 2015-2019,2021-2023 LAAS/CNRS
  * All rights reserved.
  *
  * Redistribution and use  in source  and binary  forms,  with or without
@@ -96,7 +96,8 @@ mk_e_sys_error(const char *s, genom_context self)
 }
 
 int	mk_open_tty(const char *device, speed_t baud);
-int	mk_wait_msg(const rotorcraft_conn_s *conn);
+int	mk_wait_msg(const rotorcraft_conn_s *conn,
+                const struct timeval *deadline);
 int	mk_recv_msg(struct mk_channel_s *chan, bool block);
 int	mk_send_msg(const struct mk_channel_s *chan, const char *fmt, ...);
 
